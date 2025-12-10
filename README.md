@@ -51,4 +51,4 @@ skill-name/
 - [Cloudflare Agents Documentation](https://developers.cloudflare.com/agents/)
 - [Cloudflare MCP Guide](https://developers.cloudflare.com/agents/model-context-protocol/)
 - [Agents SDK Repository](https://github.com/cloudflare/agents)
-- [Agents Starter Template](htthowps://github.com/cloudflare/agents-starter)
+- [Agents Starter Template](https://github.com/cloudflare/agents-starter)
