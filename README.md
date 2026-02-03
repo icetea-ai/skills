@@ -1,6 +1,6 @@
 # Icetea AI & Robotics Skills
 
-A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for building applications at Icetea AI & Robotics.
+A collection of [Agent Skills](https://www.anthropic.com/engineering/equipping-agents-for-the-real-world-with-agent-skills) for building applications. Originally forked from [cloudflare/skills](https://github.com/cloudflare/skills), with opinionated modifications.
 
 ## Installing
 
