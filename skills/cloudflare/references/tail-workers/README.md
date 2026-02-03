@@ -86,4 +86,3 @@ export default {
 - **analytics-engine** - Aggregated metrics storage for tail event data
 - **durable-objects** - Stateful event processing, batching tail events
 - **logpush** - Alternative for batch log export (non-real-time)
-- **workers-for-platforms** - Dynamic dispatch with tail consumers

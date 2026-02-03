@@ -9,7 +9,6 @@ How are you calling the Cloudflare API?
 ├─ From Workers runtime → Use bindings, not REST API (see ../bindings/)
 ├─ Server-side (Node/Python/Go) → Official SDK (see api.md)
 ├─ CLI/scripts → Wrangler or curl (see configuration.md)
-├─ Infrastructure-as-code → See ../pulumi/ or ../terraform/
 └─ One-off requests → curl examples (see api.md)
 ```
 
