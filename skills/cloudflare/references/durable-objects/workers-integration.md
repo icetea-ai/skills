@@ -1,6 +1,6 @@
-# Cloudflare Workers Best Practices
+# Workers Integration
 
-High-level guidance for Workers that invoke Durable Objects.
+Best practices for Workers that invoke Durable Objects.
 
 ## Wrangler Configuration
 
@@ -155,7 +155,7 @@ async function handleRooms(request: Request, env: Env): Promise<Response> {
 }
 ```
 
-## Request Validation
+## Request Validation with Zod
 
 ```typescript
 import { z } from "zod";
@@ -297,11 +297,11 @@ export default {
     }
 
     const response = await handleRequest(request, env);
-    
+
     // Add CORS headers to response
     const newHeaders = new Headers(response.headers);
     Object.entries(corsHeaders()).forEach(([k, v]) => newHeaders.set(k, v));
-    
+
     return new Response(response.body, {
       status: response.status,
       headers: newHeaders,
@@ -344,3 +344,9 @@ wrangler tail
 # List DOs
 wrangler d1 execute DB --command "SELECT * FROM _cf_DO"
 ```
+
+## See Also
+
+- **[Configuration](./configuration.md)** - Detailed wrangler setup
+- **[API](./api.md)** - DO class structure and methods
+- **[Testing](./testing.md)** - Testing Workers with DOs

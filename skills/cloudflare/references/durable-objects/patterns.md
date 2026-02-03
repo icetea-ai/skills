@@ -13,13 +13,81 @@
 
 ## RPC vs fetch()
 
-**RPC** (compat ≥2024-04-03): Type-safe, simpler, default for new projects  
+**RPC** (compat ≥2024-04-03): Type-safe, simpler, default for new projects
 **fetch()**: Legacy compat, HTTP semantics, proxying
 
 ```typescript
 const count = await stub.increment();  // RPC
 const count = await (await stub.fetch(req)).json();  // fetch()
 ```
+
+## Concurrency Model
+
+### Input/Output Gates
+
+Storage operations automatically block other requests (input gates). Responses wait for writes (output gates).
+
+```typescript
+async increment(): Promise<number> {
+  // Safe: input gates block interleaving during storage ops
+  const val = (await this.ctx.storage.get<number>("count")) ?? 0;
+  await this.ctx.storage.put("count", val + 1);
+  return val + 1;
+}
+```
+
+### Write Coalescing
+
+Multiple writes without `await` between them are batched atomically:
+
+```typescript
+// ✅ Good: All three writes commit atomically
+this.ctx.storage.sql.exec("UPDATE accounts SET balance = balance - ? WHERE id = ?", amount, fromId);
+this.ctx.storage.sql.exec("UPDATE accounts SET balance = balance + ? WHERE id = ?", amount, toId);
+this.ctx.storage.sql.exec("INSERT INTO transfers (from_id, to_id, amount) VALUES (?, ?, ?)", fromId, toId, amount);
+
+// ❌ Bad: await breaks coalescing
+await this.ctx.storage.put("key1", val1);
+await this.ctx.storage.put("key2", val2); // Separate transaction!
+```
+
+### Race Conditions with External I/O
+
+`fetch()` and other non-storage I/O allows interleaving:
+
+```typescript
+// ⚠️ Race condition possible
+async processItem(id: string) {
+  const item = await this.ctx.storage.get<Item>(`item:${id}`);
+  if (item?.status === "pending") {
+    await fetch("https://api.example.com/process"); // Other requests can run here!
+    await this.ctx.storage.put(`item:${id}`, { status: "completed" });
+  }
+}
+```
+
+**Solution**: Use optimistic locking (version numbers) or `transaction()`.
+
+### blockConcurrencyWhile()
+
+Blocks ALL concurrency. Use sparingly - only for initialization:
+
+```typescript
+// ✅ Good: One-time init
+constructor(ctx: DurableObjectState, env: Env) {
+  super(ctx, env);
+  ctx.blockConcurrencyWhile(async () => this.migrate());
+}
+
+// ❌ Bad: On every request (kills throughput)
+async handleRequest() {
+  await this.ctx.blockConcurrencyWhile(async () => {
+    // ~5ms = max 200 req/sec
+  });
+}
+```
+
+**Never** hold across external I/O (fetch, R2, KV).
 
 ## Sharding (High Throughput)
 
@@ -185,6 +253,43 @@ async myMethod() {
   return response;
 }
 ```
+
+## Schema Migrations
+
+Use `PRAGMA user_version` for incremental schema versioning:
+
+```typescript
+constructor(ctx: DurableObjectState, env: Env) {
+  super(ctx, env);
+  ctx.blockConcurrencyWhile(async () => this.migrate());
+}
+
+private async migrate() {
+  const version = this.ctx.storage.sql
+    .exec<{ user_version: number }>("PRAGMA user_version")
+    .one().user_version;
+
+  if (version < 1) {
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, data TEXT);
+      CREATE INDEX IF NOT EXISTS idx_items_data ON items(data);
+      PRAGMA user_version = 1;
+    `);
+  }
+  if (version < 2) {
+    this.ctx.storage.sql.exec(`
+      ALTER TABLE items ADD COLUMN created_at INTEGER;
+      PRAGMA user_version = 2;
+    `);
+  }
+}
+```
+
+**Key points:**
+- Run migrations in `blockConcurrencyWhile()` during construction
+- Each migration block checks `version < N` to run only when needed
+- Set `PRAGMA user_version = N` at the end of each migration block
+- Migrations are additive - never modify previous migration blocks
 
 ## Best Practices
 

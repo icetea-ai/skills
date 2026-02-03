@@ -1,11 +1,13 @@
 ---
 name: durable-objects
-description: Create and review Cloudflare Durable Objects. Use when building stateful coordination (chat rooms, multiplayer games, booking systems), implementing RPC methods, SQLite storage, alarms, WebSockets, or reviewing DO code for best practices. Covers Workers integration, wrangler config, and testing with Vitest.
+description: Create and review Cloudflare Durable Objects. Use when building stateful coordination (chat rooms, multiplayer games, booking systems), implementing RPC methods, SQLite storage, alarms, WebSockets, or reviewing DO code for best practices.
 ---
 
 # Durable Objects
 
 Build stateful, coordinated applications on Cloudflare's edge using Durable Objects.
+
+> **Deep Dive**: For comprehensive documentation including testing, Workers integration, error reference, limits, and advanced patterns, see the **cloudflare** skill's Durable Objects reference.
 
 ## When to Use
 
@@ -13,20 +15,8 @@ Build stateful, coordinated applications on Cloudflare's edge using Durable Obje
 - Implementing RPC methods, alarms, or WebSocket handlers
 - Reviewing existing DO code for best practices
 - Configuring wrangler.jsonc/toml for DO bindings and migrations
-- Writing tests with `@cloudflare/vitest-pool-workers`
-- Designing sharding strategies and parent-child relationships
 
-## Reference Documentation
-
-- `./references/rules.md` - Core rules, storage, concurrency, RPC, alarms
-- `./references/testing.md` - Vitest setup, unit/integration tests, alarm testing
-- `./references/workers.md` - Workers handlers, types, wrangler config, observability
-
-Search: `blockConcurrencyWhile`, `idFromName`, `getByName`, `setAlarm`, `sql.exec`
-
-## Core Principles
-
-### Use Durable Objects For
+## Use Durable Objects For
 
 | Need | Example |
 |------|---------|
@@ -36,7 +26,7 @@ Search: `blockConcurrencyWhile`, `idFromName`, `getByName`, `setAlarm`, `sql.exe
 | Persistent connections | WebSockets, real-time notifications |
 | Scheduled work per entity | Subscription renewals, game timeouts |
 
-### Do NOT Use For
+## Do NOT Use For
 
 - Stateless request handling (use plain Workers)
 - Maximum global distribution needs
@@ -171,3 +161,12 @@ describe("MyDO", () => {
   });
 });
 ```
+
+## See Also
+
+For comprehensive documentation, use the **cloudflare** skill which includes:
+- **Testing** - Full Vitest setup, `runInDurableObject()`, `runDurableObjectAlarm()`, `listDurableObjectIds()`
+- **Workers Integration** - Handler patterns, Zod validation, logging, CORS, secrets
+- **Patterns** - Sharding, rate limiting, locks, real-time, concurrency model
+- **API** - Class structure, ctx methods, alarms, WebSocket hibernation
+- **Gotchas** - Error reference, limits table, common issues
