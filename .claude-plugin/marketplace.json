@@ -1,15 +1,15 @@
 {
   "$schema": "https://code.claude.com/schemas/marketplace.json",
-  "name": "cloudflare",
+  "name": "icetea-ai",
   "owner": {
-    "name": "Cloudflare",
-    "url": "https://workers.cloudflare.com"
+    "name": "Icetea AI & Robotics",
+    "url": "https://github.com/icetea-ai"
   },
   "plugins": [
     {
-      "name": "cloudflare",
+      "name": "skills",
       "source": "./",
-      "description": "Skills for the Cloudflare developer platform"
+      "description": "Skills for building applications at Icetea AI & Robotics"
     }
   ]
 }

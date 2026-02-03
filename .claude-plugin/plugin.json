@@ -1,8 +1,8 @@
 {
-  "name": "cloudflare",
-  "description": "Skills for the Cloudflare developer platform: Workers, Durable Objects, Agents SDK, MCP servers, Wrangler CLI, and web performance",
+  "name": "skills",
+  "description": "Skills for building applications at Icetea AI & Robotics",
   "version": "1.0.0",
   "author": {
-    "name": "Cloudflare"
+    "name": "Icetea AI & Robotics"
   }
 }
