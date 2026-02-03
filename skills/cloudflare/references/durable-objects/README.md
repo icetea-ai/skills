@@ -5,10 +5,11 @@ Expert guidance for building stateful applications with Cloudflare Durable Objec
 ## Reading Order
 
 1. **First time?** Read this overview + Quick Start
-2. **Setting up?** See [Configuration](./configuration.md)
+2. **Setting up?** See [Configuration](./configuration.md) and [Workers Integration](./workers-integration.md)
 3. **Building features?** Use decision trees below → [Patterns](./patterns.md)
-4. **Debugging issues?** Check [Gotchas](./gotchas.md)
-5. **Deep dive?** [API](./api.md) and [DO Storage](../do-storage/README.md)
+4. **Writing tests?** See [Testing](./testing.md)
+5. **Debugging issues?** Check [Gotchas](./gotchas.md)
+6. **Deep dive?** [API](./api.md) and [DO Storage](../do-storage/README.md)
 
 ## Overview
 
@@ -175,7 +176,9 @@ npx wrangler deploy           # Deploy + auto-apply migrations
 
 - **[Configuration](./configuration.md)** - wrangler.jsonc setup, migrations, bindings, environments
 - **[API](./api.md)** - Class structure, ctx methods, alarms, WebSocket hibernation
-- **[Patterns](./patterns.md)** - Sharding, rate limiting, locks, real-time, sessions
+- **[Patterns](./patterns.md)** - Sharding, rate limiting, locks, real-time, sessions, concurrency
+- **[Workers Integration](./workers-integration.md)** - Handler patterns, validation, logging, CORS, secrets
+- **[Testing](./testing.md)** - Vitest setup, unit/integration tests, alarm testing
 - **[Gotchas](./gotchas.md)** - Limits, hibernation caveats, common errors
 
 ## See Also
