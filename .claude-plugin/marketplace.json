@@ -7,7 +7,7 @@
   },
   "plugins": [
     {
-      "name": "skills",
+      "name": "icetea-skills",
       "source": "./",
       "description": "Skills for building applications at Icetea AI & Robotics"
     }
