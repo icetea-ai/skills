@@ -241,6 +241,64 @@ private async migrate() {
 
 **Migrations converge lazily:** Unused DOs never migrate (and don't need to). Active DOs migrate on their next cold start.
 
+### Alternative: Per-Request Migrations
+
+Use lazy per-request migrations when:
+- Your Worker uses `idFromName()` with potentially untrusted input
+- You want `blockConcurrencyWhile()` to not block requests that don't need storage
+- You need to validate inside the DO before writing
+
+```typescript
+export class ChatRoom extends DurableObject<Env> {
+  private migrated = false;
+
+  private ensureMigrated() {
+    if (this.migrated) return;
+
+    const version = this.ctx.storage.sql
+      .exec<{ user_version: number }>("PRAGMA user_version")
+      .one().user_version;
+
+    if (version < 1) {
+      this.ctx.storage.sql.exec(`
+        CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, content TEXT);
+        PRAGMA user_version = 1;
+      `);
+    }
+
+    this.migrated = true;
+  }
+
+  async sendMessage(userId: string, message: string) {
+    this.ensureMigrated();  // Only initializes storage for valid operations
+    this.ctx.storage.sql.exec("INSERT INTO messages (content) VALUES (?)", message);
+  }
+
+  async getStatus() {
+    // No storage needed - no migration triggered, no blockConcurrencyWhile
+    return { online: true };
+  }
+}
+```
+
+**Benefits:**
+- Storage only initialized for legitimate, validated requests
+- Doesn't use `blockConcurrencyWhile()` (which blocks ALL requests, even ones not needing storage)
+- Can be called inside transactions naturally
+
+**Trade-offs:**
+- Must call `ensureMigrated()` in every method that needs storage
+- Slightly more code; easier to forget a call
+
+**When to choose:**
+
+| Situation | Recommendation |
+|-----------|----------------|
+| Using `idFromString()` or `newUniqueId()` | Constructor migrations (simpler) |
+| Using validated `idFromName()` | Constructor migrations (simpler) |
+| Using `idFromName()` with untrusted input | Per-request migrations |
+| Need non-storage operations to skip blocking | Per-request migrations |
+
 ### Deployment Version Mismatch
 
 During deployment rollout, old Worker code may call a DO that already has new code (or vice versa). Handle this in your Worker:
@@ -633,7 +691,7 @@ async cleanup() {
 - **Storage**: Prefer SQLite, batch with transactions, set alarms for cleanup, use PITR before risky ops
 - **Performance**: ~1K req/s per DO max - shard for more, cache in memory, use alarms for deferred work
 - **Reliability**: Handle 503 with retry+backoff, design for cold starts, test migrations with `--dry-run`
-- **Security**: Validate inputs in Workers, rate limit DO creation, use jurisdiction for compliance
+- **Security**: Validate inputs in Workers, **prefer `idFromString()` or factory patterns over `idFromName()` with untrusted input** (prevents leaked DOs), rate limit DO creation, use jurisdiction for compliance
 
 ## See Also
 

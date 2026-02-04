@@ -182,6 +182,92 @@ async function handleSendMessage(request: Request, env: Env): Promise<Response> 
 }
 ```
 
+## DO ID Strategy and Security
+
+How you obtain DO IDs affects your security posture:
+
+### idFromName() - Requires Validation
+
+**Any string creates a valid ID.** Validate before routing to prevent "leaked DOs":
+
+```typescript
+// WRONG: Accepts any user input
+async function handleRoom(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const roomId = url.searchParams.get("room");
+  const stub = env.CHAT_ROOM.getByName(roomId);  // Creates DO for ANY string!
+  return stub.handleRequest(request);
+}
+
+// RIGHT: Validate existence/authorization first
+async function handleRoom(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const roomId = url.searchParams.get("room");
+
+  const room = await env.DB.prepare(
+    "SELECT 1 FROM rooms WHERE id = ? AND is_active = true"
+  ).bind(roomId).first();
+
+  if (!room) {
+    return Response.json({ error: "Room not found" }, { status: 404 });
+  }
+
+  const stub = env.CHAT_ROOM.getByName(roomId);  // Safe - room exists
+  return stub.handleRequest(request);
+}
+```
+
+### idFromString() - Built-in Protection
+
+**Fails for invalid IDs.** Safe to use with untrusted input:
+
+```typescript
+async function handleVoucher(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const idString = url.searchParams.get("id");
+
+  try {
+    const id = env.VOUCHER.idFromString(idString);  // Throws if invalid!
+    const stub = env.VOUCHER.get(id);
+    return stub.handleRequest(request);
+  } catch {
+    return Response.json({ error: "Invalid voucher ID" }, { status: 400 });
+  }
+}
+```
+
+### Factory Pattern - Best for Human-Readable Identifiers
+
+Separate user-facing codes from internal DO IDs:
+
+```typescript
+// User provides: "SAVE20" (human-readable voucher code)
+// System uses: "abc123..." (64-char DO ID)
+
+async function handleRedeem(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  const voucherCode = url.searchParams.get("code");  // "SAVE20"
+
+  // Lookup: human code -> DO ID
+  const voucher = await env.DB.prepare(
+    "SELECT do_id FROM vouchers WHERE code = ? AND active = true"
+  ).bind(voucherCode).first();
+
+  if (!voucher) {
+    return Response.json({ error: "Invalid voucher" }, { status: 404 });
+  }
+
+  const id = env.VOUCHER.idFromString(voucher.do_id);
+  const stub = env.VOUCHER.get(id);
+  return stub.redeem(request);
+}
+```
+
+This pattern ensures:
+- Users never see/guess DO IDs
+- Only pre-created DOs can be accessed
+- Clean separation of concerns
+
 ## Observability & Logging
 
 ### Structured Logging

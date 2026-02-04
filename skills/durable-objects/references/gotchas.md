@@ -296,6 +296,59 @@ stub.myMethod(data);
 const result = await stub.myMethod(data);
 ```
 
+### "Leaked DOs from Unvalidated idFromName()"
+
+**Problem:** DOs with initialized storage created by unauthorized/brute-forced requests
+**Cause:** `idFromName(untrustedInput)` accepts any string, creating DOs for invalid identifiers
+**Solution:** Validate before routing, use `idFromString()`, or use per-request migrations
+
+The risk depends on your ID strategy:
+
+| Strategy | Risk Level | Notes |
+|----------|------------|-------|
+| `idFromName(untrustedInput)` | **High** | Any string creates a valid DO ID |
+| `idFromString(untrustedInput)` | **Low** | Fails if not a valid, existing DO ID |
+| `newUniqueId()` | **None** | You control creation entirely |
+| Factory/lookup pattern | **None** | User provides code → you lookup real DO ID |
+
+**Risky pattern:**
+
+```typescript
+// RISKY: idFromName accepts any string - attacker can create arbitrary DOs
+const roomId = url.searchParams.get("room");  // Attacker-controlled: "hacked123"
+const id = env.CHAT_ROOM.idFromName(roomId);  // Valid ID created for ANY string
+const stub = env.CHAT_ROOM.get(id);           // DO created, constructor runs
+await stub.sendMessage(body);                 // Validation happens too late
+```
+
+**Safe patterns:**
+
+```typescript
+// SAFE: idFromString fails for invalid IDs
+const doIdString = url.searchParams.get("id");      // Must be valid 64-char hex
+const id = env.CHAT_ROOM.idFromString(doIdString);  // Throws if invalid!
+const stub = env.CHAT_ROOM.get(id);
+
+// SAFE: Factory/lookup pattern (voucher example)
+const voucherCode = url.searchParams.get("code");   // Human-readable: "SAVE20"
+const voucher = await env.DB.prepare(
+  "SELECT do_id FROM vouchers WHERE code = ?"
+).bind(voucherCode).first();
+if (!voucher) return Response.json({ error: "Invalid voucher" }, { status: 404 });
+const id = env.VOUCHER.idFromString(voucher.do_id); // Known-valid ID
+const stub = env.VOUCHER.get(id);
+
+// SAFE: Validate before idFromName
+const roomId = url.searchParams.get("room");
+const isValidRoom = await env.DB.prepare(
+  "SELECT 1 FROM rooms WHERE id = ?"
+).bind(roomId).first();
+if (!isValidRoom) return Response.json({ error: "Room not found" }, { status: 404 });
+const stub = env.CHAT_ROOM.getByName(roomId);  // Now safe - room exists
+```
+
+For cases where you must use `idFromName()` with potentially untrusted input, consider [per-request migrations](./patterns.md#alternative-per-request-migrations) so storage isn't initialized until after validation inside the DO.
+
 ### "WebSocket 1006 Error on Close"
 
 **Problem:** Client gets 1006 (abnormal closure) instead of clean close code
