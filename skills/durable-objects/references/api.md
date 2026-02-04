@@ -10,13 +10,13 @@ export class MyDO extends DurableObject<Env> {
     super(ctx, env);
     // Runs on EVERY wake - keep light!
   }
-  
+
   // RPC methods (called directly from worker)
   async myMethod(arg: string): Promise<string> { return arg; }
-  
+
   // fetch handler (legacy/HTTP semantics)
   async fetch(req: Request): Promise<Response> { /* ... */ }
-  
+
   // Lifecycle handlers
   async alarm() { /* alarm fired */ }
   async webSocketMessage(ws: WebSocket, msg: string | ArrayBuffer) { /* ... */ }
@@ -59,8 +59,6 @@ this.ctx.storage.kv      // Sync KV API (SQLite DOs only)
 this.ctx.storage         // Async KV API (legacy/KV-only DOs)
 ```
 
-See **[DO Storage](../do-storage/README.md)** for complete storage API reference.
-
 ### WebSocket Management
 
 ```typescript
@@ -69,31 +67,90 @@ this.ctx.getWebSockets(tag?: string): WebSocket[]         // Get by tag or all
 this.ctx.getTags(ws: WebSocket): string[]                 // Get tags for connection
 ```
 
-### Alarms
-
-```typescript
-await this.ctx.storage.setAlarm(timestamp: number | Date)  // Schedule (overwrites existing)
-await this.ctx.storage.getAlarm(): number | null           // Get next alarm time
-await this.ctx.storage.deleteAlarm(): void                 // Cancel alarm
-```
-
-**Limit:** 1 alarm per DO. Use queue pattern for multiple events (see [Patterns](./patterns.md)).
-
 ## Storage APIs
 
-For detailed storage documentation including SQLite queries, KV operations, transactions, and Point-in-Time Recovery, see **[DO Storage](../do-storage/README.md)**.
-
-Quick reference:
+### SQL API (Recommended)
 
 ```typescript
-// SQLite (recommended)
-this.ctx.storage.sql.exec("SELECT * FROM users WHERE id = ?", userId).one()
+const cursor = this.ctx.storage.sql.exec('SELECT * FROM users WHERE email = ?', email);
+for (let row of cursor) {} // Objects: { id, name, email }
+cursor.toArray(); cursor.one(); // Single row (throws if != 1)
+for (let row of cursor.raw()) {} // Arrays: [1, "Alice", "..."]
 
-// Sync KV (SQLite DOs only)
-this.ctx.storage.kv.get("key")
+// Manual iteration
+const iter = cursor[Symbol.iterator]();
+const first = iter.next(); // { value: {...}, done: false }
 
-// Async KV (legacy)
-await this.ctx.storage.get("key")
+cursor.columnNames; // ["id", "name", "email"]
+cursor.rowsRead; cursor.rowsWritten; // Billing
+
+type User = { id: number; name: string; email: string };
+const user = this.ctx.storage.sql.exec<User>('...', userId).one();
+```
+
+### Sync KV API (SQLite DOs only)
+
+```typescript
+this.ctx.storage.kv.get("counter"); // undefined if missing
+this.ctx.storage.kv.put("counter", 42);
+this.ctx.storage.kv.put("user", { name: "Alice", age: 30 });
+this.ctx.storage.kv.delete("counter"); // true if existed
+
+for (let [key, value] of this.ctx.storage.kv.list()) {}
+
+// List options: start, prefix, reverse, limit
+this.ctx.storage.kv.list({ start: "user:", prefix: "user:", reverse: true, limit: 100 });
+```
+
+### Async KV API (Both backends)
+
+```typescript
+await this.ctx.storage.get("key"); // Single
+await this.ctx.storage.get(["key1", "key2"]); // Multiple (max 128)
+await this.ctx.storage.put("key", value); // Single
+await this.ctx.storage.put({ "key1": "v1", "key2": { nested: true } }); // Multiple (max 128)
+await this.ctx.storage.delete("key");
+await this.ctx.storage.delete(["key1", "key2"]);
+await this.ctx.storage.list({ prefix: "user:", limit: 100 });
+
+// Options: allowConcurrency, noCache, allowUnconfirmed
+await this.ctx.storage.get("key", { allowConcurrency: true, noCache: true });
+await this.ctx.storage.put("key", value, { allowUnconfirmed: true, noCache: true });
+```
+
+### Storage Options
+
+| Option | Methods | Effect | Use Case |
+|--------|---------|--------|----------|
+| `allowConcurrency` | get, list | Skip input gate; allow concurrent requests during read | Read-heavy metrics that don't need strict consistency |
+| `noCache` | get, put, list | Skip in-memory cache; always read from disk | Rarely-accessed data or testing storage directly |
+| `allowUnconfirmed` | put, delete | Return before write confirms (still protected by output gate) | Non-critical writes where latency matters more than confirmation |
+
+## Transactions
+
+```typescript
+// Sync (SQL/sync KV only)
+this.ctx.storage.transactionSync(() => {
+  this.ctx.storage.sql.exec('UPDATE accounts SET balance = balance - ? WHERE id = ?', 100, 1);
+  this.ctx.storage.sql.exec('UPDATE accounts SET balance = balance + ? WHERE id = ?', 100, 2);
+  return "result";
+});
+
+// Async
+await this.ctx.storage.transaction(async () => {
+  const value = await this.ctx.storage.get("counter");
+  await this.ctx.storage.put("counter", value + 1);
+  if (value > 100) this.ctx.storage.rollback(); // Explicit rollback
+});
+```
+
+## Point-in-Time Recovery
+
+```typescript
+await this.ctx.storage.getCurrentBookmark();
+await this.ctx.storage.getBookmarkForTime(Date.now() - 2 * 24 * 60 * 60 * 1000);
+await this.ctx.storage.onNextSessionRestoreBookmark(bookmark);
+this.ctx.abort(); // Restart to apply; bookmarks lexically comparable (earlier < later)
 ```
 
 ## Alarms
@@ -180,8 +237,15 @@ ws.serializeAttachment({ userId: "abc", room: "lobby" })
 const { userId, room } = ws.deserializeAttachment()
 ```
 
+## Misc
+
+```typescript
+await this.ctx.storage.deleteAll(); // Atomic for SQLite; alarm NOT included
+this.ctx.storage.sql.databaseSize; // Bytes
+```
+
 ## See Also
 
-- **[DO Storage](../do-storage/README.md)** - Complete storage API reference
 - **[Patterns](./patterns.md)** - Real-world usage patterns
-- **[Gotchas](./gotchas.md)** - Hibernation caveats and limits
+- **[Gotchas](./gotchas.md)** - Hibernation caveats, limits, and common errors
+- **[Configuration](./configuration.md)** - Wrangler setup and migrations

@@ -103,6 +103,6 @@ async tail(events: TraceItem[], env: Env, ctx: ExecutionContext): Promise<void>
 - [KV](../kv/README.md) - Key-value storage
 - [D1](../d1/README.md) - SQL database
 - [R2](../r2/README.md) - Object storage
-- [Durable Objects](../durable-objects/README.md) - Stateful coordination
+- **durable-objects skill** - Stateful coordination
 - [Queues](../queues/README.md) - Message queues
 - [Wrangler](../wrangler/README.md) - CLI tool reference

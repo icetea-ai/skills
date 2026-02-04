@@ -169,7 +169,7 @@ export default {
 };
 ```
 
-See durable-objects skill for full implementation.
+See **durable-objects skill** for full implementation.
 
 ### Workers for Platforms
 

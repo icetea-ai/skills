@@ -64,6 +64,6 @@ export class MyWorkflow extends WorkflowEntrypoint<Env, Params> {
 - [gotchas.md](./gotchas.md) - Timeouts, limits, debugging strategies
 
 ## See Also
-- [durable-objects](../durable-objects/) - Alternative stateful approach
+- **durable-objects skill** - Alternative stateful approach
 - [queues](../queues/) - Message-driven workflows
 - [workers](../workers/) - Entry point for workflow instances

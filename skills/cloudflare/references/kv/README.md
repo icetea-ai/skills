@@ -17,7 +17,7 @@ KV provides:
 
 | Need | Recommendation |
 |------|----------------|
-| Strong consistency | → [Durable Objects](../durable-objects/) |
+| Strong consistency | → **durable-objects skill** |
 | SQL queries | → [D1](../d1/) |
 | Object storage (files) | → [R2](../r2/) |
 | High read, low write volume | → KV ✅ |
@@ -86,4 +86,4 @@ const json = await env.MY_KV.get<Config>("config", "json");
 
 - [workers](../workers/) - Worker runtime for KV access
 - [d1](../d1/) - Use D1 for strong consistency needs
-- [durable-objects](../durable-objects/) - Strongly consistent alternative
+- **durable-objects skill** - Strongly consistent alternative

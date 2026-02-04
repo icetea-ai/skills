@@ -247,6 +247,99 @@ describe("SQLite", () => {
 });
 ```
 
+## Testing Concurrency
+
+```typescript
+it("handles concurrent increments safely", async () => {
+  const id = env.COUNTER.idFromName("concurrent-test");
+
+  // Parallel increments
+  const results = await Promise.all([
+    runInDurableObject(env.COUNTER, id, (i) => i.increment()),
+    runInDurableObject(env.COUNTER, id, (i) => i.increment()),
+    runInDurableObject(env.COUNTER, id, (i) => i.increment())
+  ]);
+
+  // All should get unique values
+  expect(new Set(results).size).toBe(3);
+  expect(Math.max(...results)).toBe(3);
+});
+```
+
+## Testing PITR (Point-in-Time Recovery)
+
+```typescript
+it("restores from bookmark", async () => {
+  const id = env.MY_DO.idFromName("pitr-test");
+
+  // Create checkpoint
+  const bookmark = await runInDurableObject(env.MY_DO, id, async (instance, state) => {
+    await state.storage.put("value", 1);
+    return await state.storage.getCurrentBookmark();
+  });
+
+  // Modify and restore
+  await runInDurableObject(env.MY_DO, id, async (instance, state) => {
+    await state.storage.put("value", 2);
+    await state.storage.onNextSessionRestoreBookmark(bookmark);
+    state.abort();
+  });
+
+  // Verify restored
+  await runInDurableObject(env.MY_DO, id, async (instance, state) => {
+    const value = await state.storage.get("value");
+    expect(value).toBe(1);
+  });
+});
+```
+
+## Testing Transactions
+
+```typescript
+it("rolls back on error", async () => {
+  const id = env.BANK.idFromName("transaction-test");
+
+  await runInDurableObject(env.BANK, id, async (instance, state) => {
+    await state.storage.put("balance", 100);
+
+    await expect(
+      state.storage.transaction(async () => {
+        await state.storage.put("balance", 50);
+        throw new Error("Cancel");
+      })
+    ).rejects.toThrow("Cancel");
+
+    const balance = await state.storage.get("balance");
+    expect(balance).toBe(100); // Rolled back
+  });
+});
+```
+
+## Per-Test Isolation Patterns
+
+```typescript
+// Per-test unique IDs
+let testId: string;
+beforeEach(() => { testId = crypto.randomUUID(); });
+
+it("isolated test", async () => {
+  const id = env.MY_DO.idFromName(testId);
+  // Uses unique DO instance
+});
+
+// Cleanup pattern
+it("with cleanup", async () => {
+  const id = env.MY_DO.idFromName("cleanup-test");
+  try {
+    await runInDurableObject(env.MY_DO, id, async (instance) => {});
+  } finally {
+    await runInDurableObject(env.MY_DO, id, async (instance, state) => {
+      await state.storage.deleteAll();
+    });
+  }
+});
+```
+
 ## Running Tests
 
 ```bash
@@ -265,6 +358,6 @@ package.json:
 
 ## See Also
 
-- **[DO Storage Testing](../do-storage/testing.md)** - Storage-specific test patterns
 - **[API](./api.md)** - Alarm and storage APIs
 - **[Patterns](./patterns.md)** - Common DO patterns to test
+- **[Gotchas](./gotchas.md)** - Common testing issues

@@ -79,7 +79,7 @@ export default {
 
 ## See Also
 
-- [Durable Objects](../durable-objects/) - Containers extend Durable Objects
+- **durable-objects skill** - Containers extend Durable Objects
 - [Workflows](../workflows/) - Orchestrate container operations
 - [Queues](../queues/) - Trigger containers from queue messages
 - [Cloudflare Docs](https://developers.cloudflare.com/containers/)

@@ -154,7 +154,7 @@ const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(user
 if (new Uint8Array(hash)[0] % 100 < rolloutPercent) return newFeature(request);
 ```
 
-Rate limiting: See [Durable Objects](../durable-objects/README.md)
+Rate limiting: See **durable-objects skill**
 
 ## R2 Multipart Upload
 

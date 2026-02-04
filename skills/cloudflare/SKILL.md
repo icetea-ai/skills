@@ -5,7 +5,6 @@ references:
   - workers
   - pages
   - d1
-  - durable-objects
   - workers-ai
 ---
 
@@ -21,7 +20,7 @@ Consolidated skill for building on the Cloudflare platform. Use decision trees b
 Need to run code?
 ├─ Serverless functions at the edge → workers/
 ├─ Full-stack web app with Git deploys → pages/
-├─ Stateful coordination/real-time → durable-objects/
+├─ Stateful coordination/real-time → Use `durable-objects` skill
 ├─ Long-running multi-step jobs → workflows/
 ├─ Run containers → containers/
 ├─ Scheduled tasks (cron) → cron-triggers/
@@ -38,7 +37,7 @@ Need storage?
 ├─ Object/file storage (S3-compatible) → r2/
 ├─ Message queue (async processing) → queues/
 ├─ Vector embeddings (AI/semantic search) → vectorize/
-├─ Strongly-consistent per-entity state → durable-objects/ (DO storage)
+├─ Strongly-consistent per-entity state → Use `durable-objects` skill
 ├─ Secrets management → secrets-store/
 ├─ Streaming ETL to R2 → pipelines/
 ```
@@ -79,7 +78,7 @@ Need media?
 | Workers | `references/workers/` |
 | Pages | `references/pages/` |
 | Pages Functions | `references/pages-functions/` |
-| Durable Objects | `references/durable-objects/` |
+| Durable Objects | Use standalone `durable-objects` skill |
 | Workflows | `references/workflows/` |
 | Containers | `references/containers/` |
 | Cron Triggers | `references/cron-triggers/` |
@@ -94,7 +93,7 @@ Need media?
 | R2 | `references/r2/` |
 | Queues | `references/queues/` |
 | Hyperdrive | `references/hyperdrive/` |
-| DO Storage | `references/do-storage/` |
+| DO Storage | Use standalone `durable-objects` skill |
 | Secrets Store | `references/secrets-store/` |
 | Pipelines | `references/pipelines/` |
 | R2 Data Catalog | `references/r2-data-catalog/` |

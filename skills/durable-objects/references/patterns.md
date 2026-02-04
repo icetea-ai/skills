@@ -13,7 +13,7 @@
 
 ## RPC vs fetch()
 
-**RPC** (compat ≥2024-04-03): Type-safe, simpler, default for new projects
+**RPC** (compat >=2024-04-03): Type-safe, simpler, default for new projects
 **fetch()**: Legacy compat, HTTP semantics, proxying
 
 ```typescript
@@ -41,12 +41,12 @@ async increment(): Promise<number> {
 Multiple writes without `await` between them are batched atomically:
 
 ```typescript
-// ✅ Good: All three writes commit atomically
+// Good: All three writes commit atomically
 this.ctx.storage.sql.exec("UPDATE accounts SET balance = balance - ? WHERE id = ?", amount, fromId);
 this.ctx.storage.sql.exec("UPDATE accounts SET balance = balance + ? WHERE id = ?", amount, toId);
 this.ctx.storage.sql.exec("INSERT INTO transfers (from_id, to_id, amount) VALUES (?, ?, ?)", fromId, toId, amount);
 
-// ❌ Bad: await breaks coalescing
+// Bad: await breaks coalescing
 await this.ctx.storage.put("key1", val1);
 await this.ctx.storage.put("key2", val2); // Separate transaction!
 ```
@@ -56,7 +56,7 @@ await this.ctx.storage.put("key2", val2); // Separate transaction!
 `fetch()` and other non-storage I/O allows interleaving:
 
 ```typescript
-// ⚠️ Race condition possible
+// Race condition possible
 async processItem(id: string) {
   const item = await this.ctx.storage.get<Item>(`item:${id}`);
   if (item?.status === "pending") {
@@ -73,13 +73,13 @@ async processItem(id: string) {
 Blocks ALL concurrency. Use sparingly - only for initialization:
 
 ```typescript
-// ✅ Good: One-time init
+// Good: One-time init
 constructor(ctx: DurableObjectState, env: Env) {
   super(ctx, env);
   ctx.blockConcurrencyWhile(async () => this.migrate());
 }
 
-// ❌ Bad: On every request (kills throughput)
+// Bad: On every request (kills throughput)
 async handleRequest() {
   await this.ctx.blockConcurrencyWhile(async () => {
     // ~5ms = max 200 req/sec
@@ -91,7 +91,27 @@ async handleRequest() {
 
 ## Sharding (High Throughput)
 
-Single DO ~1K req/s max. Shard for higher throughput:
+### Throughput by Operation Type
+
+The ~1K req/s limit varies by operation complexity:
+
+| Operation Type | Typical Throughput |
+|----------------|-------------------|
+| Simple KV read/write | ~1,000 req/s |
+| SQLite read | ~500-1,000 req/s |
+| SQLite write | ~200-500 req/s |
+| Complex queries with JOINs | ~100-300 req/s |
+| External I/O (fetch) | Depends on latency |
+
+### Calculating Shard Count
+
+**Formula:** `Required DOs = Total RPS / Capacity per DO`
+
+Example: 10,000 req/s with SQLite writes (~300 req/s per DO)
+- Required DOs = 10,000 / 300 = ~34 DOs
+- Use 50-100 shards for headroom and even distribution
+
+### Implementation
 
 ```typescript
 export default {
@@ -138,6 +158,175 @@ async acquire(timeoutMs = 5000): Promise<boolean> {
 }
 async release() { this.held = false; await this.ctx.storage.deleteAlarm(); }
 async alarm() { this.held = false; }  // Auto-release on timeout
+```
+
+## Schema Migrations
+
+Use `PRAGMA user_version` for incremental schema versioning:
+
+```typescript
+constructor(ctx: DurableObjectState, env: Env) {
+  super(ctx, env);
+  ctx.blockConcurrencyWhile(async () => this.migrate());
+}
+
+private async migrate() {
+  const version = this.ctx.storage.sql
+    .exec<{ user_version: number }>("PRAGMA user_version")
+    .one().user_version;
+
+  if (version < 1) {
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, data TEXT);
+      CREATE INDEX IF NOT EXISTS idx_items_data ON items(data);
+      PRAGMA user_version = 1;
+    `);
+  }
+  if (version < 2) {
+    this.ctx.storage.sql.exec(`
+      ALTER TABLE items ADD COLUMN created_at INTEGER;
+      PRAGMA user_version = 2;
+    `);
+  }
+}
+```
+
+**Key points:**
+- Run migrations in `blockConcurrencyWhile()` during construction
+- Each migration block checks `version < N` to run only when needed
+- Set `PRAGMA user_version = N` at the end of each migration block
+- Migrations are additive - never modify previous migration blocks
+
+### Composite Indexes
+
+For queries filtering on multiple columns, create composite indexes:
+
+```typescript
+// Query: SELECT * FROM messages WHERE user_id = ? AND created_at > ? ORDER BY created_at
+this.ctx.storage.sql.exec(`
+  CREATE INDEX IF NOT EXISTS idx_messages_user_time ON messages(user_id, created_at)
+`);
+
+// Query: SELECT * FROM orders WHERE status = ? AND priority = ? LIMIT 10
+this.ctx.storage.sql.exec(`
+  CREATE INDEX IF NOT EXISTS idx_orders_status_priority ON orders(status, priority)
+`);
+```
+
+**Index design rules:**
+- Column order matters: put equality filters first, then range/sort columns
+- For `WHERE a = ? AND b > ? ORDER BY b`, index on `(a, b)`
+- Covering indexes can include additional columns to avoid table lookups
+
+## In-Memory Caching
+
+```typescript
+export class UserCache extends DurableObject<Env> {
+  cache = new Map<string, User>();
+  async getUser(id: string): Promise<User | undefined> {
+    if (this.cache.has(id)) {
+      const cached = this.cache.get(id);
+      if (cached) return cached;
+    }
+    const user = await this.ctx.storage.get<User>(`user:${id}`);
+    if (user) this.cache.set(id, user);
+    return user;
+  }
+  async updateUser(id: string, data: Partial<User>) {
+    const updated = { ...await this.getUser(id), ...data };
+    this.cache.set(id, updated);
+    await this.ctx.storage.put(`user:${id}`, updated);
+    return updated;
+  }
+}
+```
+
+## Batch Processing with Alarms
+
+```typescript
+export class BatchProcessor extends DurableObject<Env> {
+  pending: string[] = [];
+  async addItem(item: string) {
+    this.pending.push(item);
+    if (!await this.ctx.storage.getAlarm()) await this.ctx.storage.setAlarm(Date.now() + 5000);
+  }
+  async alarm() {
+    const items = [...this.pending];
+    this.pending = [];
+    this.ctx.storage.sql.exec(
+      `INSERT INTO processed_items (item, timestamp) VALUES ${items.map(() => "(?, ?)").join(", ")}`,
+      ...items.flatMap(item => [item, Date.now()])
+    );
+  }
+}
+```
+
+## Initialization Pattern
+
+```typescript
+export class Counter extends DurableObject<Env> {
+  value: number;
+  constructor(ctx: DurableObjectState, env: Env) {
+    super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => { this.value = (await ctx.storage.get("value")) || 0; });
+  }
+  async increment() {
+    this.value++;
+    this.ctx.storage.put("value", this.value); // Don't await (output gate protects)
+    return this.value;
+  }
+}
+```
+
+## Safe Counter / Optimized Write
+
+```typescript
+// Input gate blocks other requests
+async getUniqueNumber(): Promise<number> {
+  let val = await this.ctx.storage.get("counter");
+  await this.ctx.storage.put("counter", val + 1);
+  return val;
+}
+
+// No await on write - output gate delays response until write confirms
+async increment(): Promise<Response> {
+  let val = await this.ctx.storage.get("counter");
+  this.ctx.storage.put("counter", val + 1);
+  return new Response(String(val));
+}
+```
+
+## Parent-Child Coordination
+
+Hierarchical DO pattern where parent manages child DOs:
+
+```typescript
+// Parent DO coordinates children
+export class Workspace extends DurableObject<Env> {
+  async createDocument(name: string): Promise<string> {
+    const docId = crypto.randomUUID();
+    const childId = this.env.DOCUMENT.idFromName(`${this.ctx.id.toString()}:${docId}`);
+    const childStub = this.env.DOCUMENT.get(childId);
+    await childStub.initialize(name);
+
+    // Track child in parent storage
+    this.ctx.storage.sql.exec('INSERT INTO documents (id, name, created) VALUES (?, ?, ?)',
+      docId, name, Date.now());
+    return docId;
+  }
+
+  async listDocuments(): Promise<string[]> {
+    return this.ctx.storage.sql.exec('SELECT id FROM documents').toArray().map(r => r.id);
+  }
+}
+
+// Child DO
+export class Document extends DurableObject<Env> {
+  async initialize(name: string) {
+    this.ctx.storage.sql.exec('CREATE TABLE IF NOT EXISTS content(key TEXT PRIMARY KEY, value TEXT)');
+    this.ctx.storage.sql.exec('INSERT INTO content VALUES (?, ?)', 'name', name);
+  }
+}
 ```
 
 ## Hibernation-Aware Pattern
@@ -242,6 +431,46 @@ async alarm() {
 }
 ```
 
+## Alarm Idempotency (CRITICAL)
+
+**Alarms may fire more than once.** The runtime guarantees at-least-once delivery, not exactly-once. Always design alarm handlers to be idempotent.
+
+```typescript
+// WRONG - not idempotent, double-charges on retry
+async alarm() {
+  const subscription = await this.ctx.storage.get<Subscription>("sub");
+  await this.chargeUser(subscription.userId, subscription.amount);
+  await this.ctx.storage.setAlarm(Date.now() + 30 * 24 * 60 * 60 * 1000);
+}
+
+// RIGHT - idempotent with guard
+async alarm() {
+  const subscription = await this.ctx.storage.get<Subscription>("sub");
+
+  // Check if already processed this billing cycle
+  if (subscription.lastBilledAt >= this.getBillingCycleStart()) {
+    // Already billed, just reschedule
+    await this.ctx.storage.setAlarm(this.getNextBillingDate());
+    return;
+  }
+
+  await this.chargeUser(subscription.userId, subscription.amount);
+
+  // Mark as processed BEFORE rescheduling
+  await this.ctx.storage.put("sub", {
+    ...subscription,
+    lastBilledAt: Date.now()
+  });
+
+  await this.ctx.storage.setAlarm(this.getNextBillingDate());
+}
+```
+
+**Idempotency patterns:**
+- Store "processed" flag or timestamp before taking action
+- Use unique transaction IDs for external calls
+- Check current state before modifying
+
 ## Graceful Cleanup
 
 Use `ctx.waitUntil()` to complete work after response:
@@ -254,42 +483,14 @@ async myMethod() {
 }
 ```
 
-## Schema Migrations
-
-Use `PRAGMA user_version` for incremental schema versioning:
+## Cleanup
 
 ```typescript
-constructor(ctx: DurableObjectState, env: Env) {
-  super(ctx, env);
-  ctx.blockConcurrencyWhile(async () => this.migrate());
-}
-
-private async migrate() {
-  const version = this.ctx.storage.sql
-    .exec<{ user_version: number }>("PRAGMA user_version")
-    .one().user_version;
-
-  if (version < 1) {
-    this.ctx.storage.sql.exec(`
-      CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, data TEXT);
-      CREATE INDEX IF NOT EXISTS idx_items_data ON items(data);
-      PRAGMA user_version = 1;
-    `);
-  }
-  if (version < 2) {
-    this.ctx.storage.sql.exec(`
-      ALTER TABLE items ADD COLUMN created_at INTEGER;
-      PRAGMA user_version = 2;
-    `);
-  }
+async cleanup() {
+  await this.ctx.storage.deleteAlarm(); // Separate from deleteAll
+  await this.ctx.storage.deleteAll();
 }
 ```
-
-**Key points:**
-- Run migrations in `blockConcurrencyWhile()` during construction
-- Each migration block checks `version < N` to run only when needed
-- Set `PRAGMA user_version = N` at the end of each migration block
-- Migrations are additive - never modify previous migration blocks
 
 ## Best Practices
 
@@ -303,4 +504,4 @@ private async migrate() {
 
 - **[API](./api.md)** - ctx methods, WebSocket handlers
 - **[Gotchas](./gotchas.md)** - Hibernation caveats, common errors
-- **[DO Storage](../do-storage/README.md)** - Storage patterns and transactions
+- **[Testing](./testing.md)** - Testing patterns with Vitest

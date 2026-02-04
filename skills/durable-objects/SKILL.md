@@ -1,13 +1,27 @@
 ---
 name: durable-objects
 description: Create and review Cloudflare Durable Objects. Use when building stateful coordination (chat rooms, multiplayer games, booking systems), implementing RPC methods, SQLite storage, alarms, WebSockets, or reviewing DO code for best practices.
+references:
+  - api
+  - configuration
+  - patterns
+  - testing
+  - gotchas
+  - workers-integration
 ---
 
 # Durable Objects
 
 Build stateful, coordinated applications on Cloudflare's edge using Durable Objects.
 
-> **Deep Dive**: For comprehensive documentation including testing, Workers integration, error reference, limits, and advanced patterns, see the **cloudflare** skill's Durable Objects reference.
+## Reading Order
+
+1. **[Configuration](./references/configuration.md)** - wrangler.jsonc setup, migrations, bindings
+2. **[API](./references/api.md)** - Class structure, storage APIs (SQL, KV), alarms, WebSockets
+3. **[Patterns](./references/patterns.md)** - Concurrency, sharding, rate limiting, real-time collaboration
+4. **[Gotchas](./references/gotchas.md)** - **Read the concurrency gates section first!** Limits, common errors
+5. **[Testing](./references/testing.md)** - Vitest setup, `runInDurableObject()`, alarm testing
+6. **[Workers Integration](./references/workers-integration.md)** - Handler patterns, validation, logging
 
 ## When to Use
 
@@ -31,6 +45,18 @@ Build stateful, coordinated applications on Cloudflare's edge using Durable Obje
 - Stateless request handling (use plain Workers)
 - Maximum global distribution needs
 - High fan-out independent requests
+
+## State Management Layers
+
+| Layer | Type | Durability | Speed | Use Case |
+|-------|------|------------|-------|----------|
+| In-memory variables | Transient | Lost on eviction | Fastest | Caches, computed values |
+| `ctx.storage.sql` | Persistent | Survives eviction | Fast | Primary data, relationships |
+| `ctx.storage` KV | Persistent | Survives eviction | Fast | Simple key-value data |
+| `ws.serializeAttachment()` | Per-connection | Survives hibernation | Fast | WebSocket session metadata |
+| External (R2, D1, KV) | Global | Globally durable | Slower | Shared state, large objects |
+
+**Rule:** Always persist critical state to storage. Use in-memory only for caching data that can be reconstructed.
 
 ## Quick Reference
 
@@ -161,12 +187,3 @@ describe("MyDO", () => {
   });
 });
 ```
-
-## See Also
-
-For comprehensive documentation, use the **cloudflare** skill which includes:
-- **Testing** - Full Vitest setup, `runInDurableObject()`, `runDurableObjectAlarm()`, `listDurableObjectIds()`
-- **Workers Integration** - Handler patterns, Zod validation, logging, CORS, secrets
-- **Patterns** - Sharding, rate limiting, locks, real-time, concurrency model
-- **API** - Class structure, ctx methods, alarms, WebSocket hibernation
-- **Gotchas** - Error reference, limits table, common issues

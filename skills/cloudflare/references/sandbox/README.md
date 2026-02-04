@@ -91,6 +91,6 @@ EXPOSE 8080 3000  # Required for wrangler dev
 - [gotchas.md](./gotchas.md) - Issues, limits, best practices
 
 ## See Also
-- [durable-objects](../durable-objects/) - Sandbox runs on DO infrastructure
+- **durable-objects skill** - Sandbox runs on DO infrastructure
 - [containers](../containers/) - Container runtime fundamentals
 - [workers](../workers/) - Entry point for sandbox requests
