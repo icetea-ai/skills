@@ -15,7 +15,7 @@ Install using the [plugin marketplace](https://code.claude.com/docs/en/discover-
 /plugin marketplace add icetea-ai/skills
 
 # Step 2: Install the plugin (via UI or CLI)
-/plugin install skills@icetea-ai
+/plugin install icetea-skills@icetea-ai
 # Or: /plugin → Discover → Select skills → Install
 ```
 
