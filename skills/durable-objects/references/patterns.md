@@ -10,6 +10,7 @@
 | Real-time updates | WebSocket Collab | `idFromName(room)` |
 | User sessions | Session Management | `idFromName(sessionId)` |
 | Background cleanup | Alarm-based | Any |
+| Admin + data separation | Control/Data Plane | Control: `idFromName("control")`, Data: `newUniqueId()` |
 
 ## RPC vs fetch()
 
@@ -162,7 +163,42 @@ async alarm() { this.held = false; }  // Auto-release on timeout
 
 ## Schema Migrations
 
-Use `PRAGMA user_version` for incremental schema versioning:
+### When Do You Need Formal Migration Tracking?
+
+| Operation | Need PRAGMA user_version? |
+|-----------|---------------------------|
+| CREATE TABLE IF NOT EXISTS | No - inherently idempotent |
+| CREATE INDEX IF NOT EXISTS | No - inherently idempotent |
+| ADD COLUMN (single) | No - check if column exists first |
+| Multiple sequential migrations | Yes - ordering matters |
+| Data migration (backfill) | Yes - can't safely re-run |
+| DROP COLUMN/TABLE | Yes - destructive, can't undo |
+| Rename column/table | Yes - can't check "if renamed" |
+
+### Simple Approach (Single Change)
+
+For adding a single column, check if it exists first. SQLite has no `ADD COLUMN IF NOT EXISTS`:
+
+```typescript
+constructor(ctx: DurableObjectState, env: Env) {
+  super(ctx, env);
+  ctx.blockConcurrencyWhile(async () => {
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, data TEXT)
+    `);
+
+    // Check before ALTER (SQLite has no ADD COLUMN IF NOT EXISTS)
+    const cols = this.ctx.storage.sql.exec("PRAGMA table_info(items)").toArray();
+    if (!cols.some(c => c.name === 'status')) {
+      this.ctx.storage.sql.exec("ALTER TABLE items ADD COLUMN status TEXT");
+    }
+  });
+}
+```
+
+### PRAGMA user_version (Multiple Migrations)
+
+Use `PRAGMA user_version` for incremental schema versioning when you have multiple migrations:
 
 ```typescript
 constructor(ctx: DurableObjectState, env: Env) {
@@ -196,6 +232,33 @@ private async migrate() {
 - Each migration block checks `version < N` to run only when needed
 - Set `PRAGMA user_version = N` at the end of each migration block
 - Migrations are additive - never modify previous migration blocks
+
+### Why Constructor Migrations Work
+
+**DO restarts on deployment:** When you deploy new code, existing DO instances are shut down. The first request after deployment creates a new instance with new code, running the constructor (and migrations).
+
+**Each instance is isolated:** If you have 10,000 DOs, each maintains its own schema version. They migrate independently when accessed.
+
+**Migrations converge lazily:** Unused DOs never migrate (and don't need to). Active DOs migrate on their next cold start.
+
+### Deployment Version Mismatch
+
+During deployment rollout, old Worker code may call a DO that already has new code (or vice versa). Handle this in your Worker:
+
+```typescript
+async function callDOWithRetry(stub: DurableObjectStub, maxRetries = 3) {
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      return await stub.myMethod();
+    } catch (e: any) {
+      if (e.message?.includes('code has been updated')) {
+        continue; // Retry - DO will restart with new code
+      }
+      throw e;
+    }
+  }
+}
+```
 
 ### Composite Indexes
 
@@ -328,6 +391,78 @@ export class Document extends DurableObject<Env> {
   }
 }
 ```
+
+## Control Plane / Data Plane Pattern
+
+Separates administrative operations from resource operations for scalability.
+
+### When to Use
+
+- Multi-tenant SaaS (one data plane DO per tenant)
+- Document/file management (one data plane DO per document)
+- Per-user databases
+- Any system where data plane requests >> control plane operations
+
+### Architecture
+
+- **Control Plane**: Single DO manages metadata (create/delete/list resources)
+- **Data Plane**: One DO per resource handles actual operations
+
+### Implementation
+
+```typescript
+// Control Plane DO - manages all tenants
+export class TenantControlPlane extends DurableObject<Env> {
+  async createTenant(name: string, locationHint?: DurableObjectLocationHint): Promise<string> {
+    const tenantId = this.env.TENANT_DATA.newUniqueId({ locationHint });
+    this.ctx.storage.sql.exec(
+      "INSERT INTO tenants (id, name, created) VALUES (?, ?, ?)",
+      tenantId.toString(), name, Date.now()
+    );
+    const stub = this.env.TENANT_DATA.get(tenantId);
+    await stub.init(name);
+    return tenantId.toString();
+  }
+
+  async listTenants(): Promise<string[]> {
+    return this.ctx.storage.sql.exec("SELECT id FROM tenants").toArray().map(r => r.id);
+  }
+}
+
+// Data Plane DO - one per tenant
+export class TenantData extends DurableObject<Env> {
+  async init(name: string) {
+    this.ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS data (key TEXT PRIMARY KEY, value TEXT)");
+    this.ctx.storage.sql.exec("INSERT INTO data VALUES ('name', ?)", name);
+  }
+
+  async getData(key: string): Promise<string | null> {
+    return this.ctx.storage.sql.exec("SELECT value FROM data WHERE key = ?", key).one()?.value ?? null;
+  }
+}
+
+// Worker routing
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    if (url.pathname === "/tenants" && request.method === "POST") {
+      // Creation goes through control plane
+      const control = env.TENANT_CONTROL.getByName("control");
+      return Response.json({ id: await control.createTenant("New Tenant") });
+    }
+    // Data operations go directly to data plane
+    const tenantId = url.searchParams.get("tenant");
+    const data = env.TENANT_DATA.get(env.TENANT_DATA.idFromString(tenantId!));
+    return Response.json(await data.getData("name"));
+  }
+};
+```
+
+### Benefits
+
+- **Performance**: Data requests bypass control plane bottleneck
+- **Scalability**: Millions of data plane DOs, each handling its own load
+- **Locality**: Use `locationHint` to place data near users
 
 ## Hibernation-Aware Pattern
 

@@ -1,6 +1,6 @@
 ---
 name: durable-objects
-description: Create and review Cloudflare Durable Objects. Use when building stateful coordination (chat rooms, multiplayer games, booking systems), implementing RPC methods, SQLite storage, alarms, WebSockets, or reviewing DO code for best practices.
+description: Use when reviewing, creating, or auditing Cloudflare Durable Objects code. Triggers on DO reviews, DurableObject implementations, stateful coordination (chat rooms, multiplayer games, booking systems), RPC methods, SQLite storage, alarms, WebSockets, or DO best practices analysis.
 references:
   - api
   - configuration
@@ -39,6 +39,8 @@ Build stateful, coordinated applications on Cloudflare's edge using Durable Obje
 | Per-entity storage | Multi-tenant SaaS, per-user data |
 | Persistent connections | WebSockets, real-time notifications |
 | Scheduled work per entity | Subscription renewals, game timeouts |
+
+**Quick test:** If your database queries consistently filter by `WHERE resourceID = 'abc'`, DOs likely simplify your architecture.
 
 ## Do NOT Use For
 
@@ -172,6 +174,23 @@ async alarm(): Promise<void> {
 // Cancel
 await this.ctx.storage.deleteAlarm();
 ```
+
+## Schema Migrations
+
+```typescript
+// Simple: Single column addition (check if exists)
+const cols = this.ctx.storage.sql.exec("PRAGMA table_info(items)").toArray();
+if (!cols.some(c => c.name === 'status')) {
+  this.ctx.storage.sql.exec("ALTER TABLE items ADD COLUMN status TEXT");
+}
+
+// Complex: Multiple migrations (use PRAGMA user_version)
+const v = this.ctx.storage.sql.exec("PRAGMA user_version").one().user_version;
+if (v < 1) { /* migration 1 */ this.ctx.storage.sql.exec("PRAGMA user_version = 1"); }
+if (v < 2) { /* migration 2 */ this.ctx.storage.sql.exec("PRAGMA user_version = 2"); }
+```
+
+See [Patterns: Schema Migrations](./references/patterns.md#schema-migrations) for decision tree and details.
 
 ## Testing Quick Start
 

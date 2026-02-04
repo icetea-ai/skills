@@ -139,6 +139,34 @@ private getHeavyData() {
 }
 ```
 
+### "Migration Runs on Every Wake (That's OK)"
+
+**Problem:** Concerned that migrations run repeatedly
+**Cause:** Constructor runs on every cold start, so migration code executes each time
+**Reality:** This is expected and correct behavior
+
+**Key insight:** Migrations MUST be idempotent. They check state before acting:
+
+```typescript
+// OK: CREATE TABLE IF NOT EXISTS is idempotent
+this.ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS items (...)");
+
+// OK: PRAGMA user_version check skips completed migrations
+const v = this.ctx.storage.sql.exec("PRAGMA user_version").one().user_version;
+if (v < 2) { /* only runs if needed */ }
+
+// WRONG: ALTER TABLE ADD COLUMN fails if column exists
+this.ctx.storage.sql.exec("ALTER TABLE items ADD COLUMN status TEXT"); // Error on re-run!
+
+// RIGHT: Check column existence first
+const cols = this.ctx.storage.sql.exec("PRAGMA table_info(items)").toArray();
+if (!cols.some(c => c.name === 'status')) {
+  this.ctx.storage.sql.exec("ALTER TABLE items ADD COLUMN status TEXT");
+}
+```
+
+**Why this works with deployments:** When you deploy new code, existing DO instances are shut down. The first request after deployment creates a new instance with new code. So your migration runs with the new code, ensuring schema and code stay in sync.
+
 ### "Silent Data Corruption with Large IDs"
 
 **Cause:** JavaScript numbers have 53-bit precision; SQLite INTEGER is 64-bit
