@@ -35,10 +35,18 @@ Skills are contextual and auto-loaded based on your conversation. When a request
 
 | Skill | Useful for |
 |-------|------------|
-| cloudflare | Comprehensive platform skill covering Workers, Pages, storage (KV, D1, R2), AI (Workers AI, Vectorize, Agents SDK), networking (Tunnel, Spectrum), security (WAF, DDoS), and IaC (Terraform, Pulumi) |
-| durable-objects | Stateful coordination (chat rooms, games, booking), RPC, SQLite, alarms, WebSockets |
+| cloudflare | Workers, Pages, Queues, KV, D1, R2, Workers AI, Vectorize, Hyperdrive, Containers, Workflows |
+| durable-objects | DurableObject classes, ctx.storage, blockConcurrencyWhile, alarms, WebSockets, RPC, SQLite storage, stateful coordination |
 | wrangler | Deploying and managing Workers, KV, R2, D1, Vectorize, Queues, Workflows |
 | web-perf | Auditing Core Web Vitals (FCP, LCP, TBT, CLS), render-blocking resources, network chains |
+| using-icetea-skills | Maps project patterns to skills, guides which skill to invoke before implementation |
+
+### Auto-Discovery Limitations
+
+Skills don't always auto-discover due to security constraints - we avoid SessionStart hooks that execute scripts. If Claude doesn't automatically invoke the right skill:
+
+1. **Explicitly tell Claude**: "Use the durable-objects skill" or "Load icetea-skills:cloudflare"
+2. **Add to CLAUDE.md**: Include skill routing in your project's `CLAUDE.md` file.
 
 ## Resources
 

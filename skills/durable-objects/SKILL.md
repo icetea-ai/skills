@@ -1,6 +1,6 @@
 ---
 name: durable-objects
-description: Use when reviewing, creating, or auditing Cloudflare Durable Objects code. Triggers on DO reviews, DurableObject implementations, stateful coordination (chat rooms, multiplayer games, booking systems), RPC methods, SQLite storage, alarms, WebSockets, or DO best practices analysis.
+description: Use when working with Cloudflare Durable Objects - reviewing, creating, or modifying DO code. Triggers on: extends DurableObject, DurableObjectState, ctx.storage, blockConcurrencyWhile, alarms, WebSockets, RPC methods, SQLite storage, stateful coordination.
 references:
   - api
   - configuration

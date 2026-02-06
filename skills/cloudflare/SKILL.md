@@ -1,6 +1,6 @@
 ---
 name: cloudflare
-description: Use when working with Cloudflare Workers, Pages, KV, D1, R2, Workers AI, Vectorize, Agents SDK, Tunnel, Spectrum, WAF, DDoS protection, or Terraform/Pulumi for Cloudflare. Triggers on Cloudflare development, deployment, or configuration tasks.
+description: Use when working with Cloudflare platform - Workers, Pages, Queues, KV, D1, R2, Workers AI, Vectorize, Hyperdrive, Containers, Workflows. Triggers on Cloudflare development, deployment, or configuration tasks.
 references:
   - workers
   - pages
