@@ -676,6 +676,44 @@ async myMethod() {
 }
 ```
 
+## Zombie DO Cleanup
+
+**Problem:** DOs created before reliable alarm implementation may have:
+- Storage data (incurs billing)
+- No alarm set (won't self-clean)
+- No way to reach them via normal app logic (unknown names/IDs)
+
+**Solution:** Use CF REST API to list all DO instances, then call cleanup RPC:
+
+```bash
+# 1. List all DOs in namespace (returns hex IDs, not names)
+curl https://api.cloudflare.com/client/v4/accounts/$ACCOUNT/workers/durable_objects/namespaces/$NS/objects \
+  -H "Authorization: Bearer $TOKEN"
+# Response: { result: [{ id: "abc123def456..." }, ...] }
+```
+
+```typescript
+// 2. DO exposes cleanup method
+export class MyDO extends DurableObject {
+  async cleanup() {
+    await this.ctx.storage.deleteAlarm();
+    await this.ctx.storage.deleteAll();
+  }
+}
+
+// 3. Admin endpoint accepts hex IDs from CF API
+app.post("/admin/cleanup", async (c) => {
+  const { ids } = await c.req.json<{ ids: string[] }>();
+  await Promise.all(ids.map(hexId => {
+    const id = c.env.MY_DO.idFromString(hexId);  // hex ID → DurableObjectId
+    return c.env.MY_DO.get(id).cleanup();
+  }));
+  return c.json({ cleaned: ids.length });
+});
+```
+
+**Key:** `idFromString(hexId)` converts CF API's hex IDs to `DurableObjectId`.
+
 ## Cleanup
 
 ```typescript
