@@ -1,6 +1,6 @@
 ---
 name: durable-objects
-description: Use when working with Cloudflare Durable Objects - reviewing, creating, or modifying DO code. Triggers on: extends DurableObject, DurableObjectState, ctx.storage, blockConcurrencyWhile, alarms, WebSockets, RPC methods, SQLite storage, stateful coordination.
+description: "Use when working with Cloudflare Durable Objects - reviewing, creating, or modifying DO code. Triggers on: extends DurableObject, DurableObjectState, ctx.storage, blockConcurrencyWhile, alarms, WebSockets, RPC methods, SQLite storage, stateful coordination."
 references:
   - api
   - configuration
