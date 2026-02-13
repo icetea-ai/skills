@@ -183,8 +183,10 @@ async alarm() {
 
 **Reliability:**
 - Alarms survive DO eviction/restart
-- Cloudflare retries failed alarms automatically
+- Cloudflare retries failed alarms automatically (limited retries, typically 3-6)
 - Not guaranteed exactly-once (handle idempotently)
+- **If all retries exhaust, the alarm disappears permanently** — always wrap application logic in try-catch and reschedule on failure (see [Patterns: Alarm Error Handling](./patterns.md#alarm-error-handling))
+- Use a Worker-level cron trigger as a safety net for critical alarms that must not be lost
 
 ## WebSocket Hibernation
 

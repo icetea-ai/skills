@@ -165,8 +165,8 @@ async alarm() { this.held = false; }  // Auto-release on timeout
 
 ### When Do You Need Formal Migration Tracking?
 
-| Operation | Need PRAGMA user_version? |
-|-----------|---------------------------|
+| Operation | Need migration tracking? |
+|-----------|--------------------------|
 | CREATE TABLE IF NOT EXISTS | No - inherently idempotent |
 | CREATE INDEX IF NOT EXISTS | No - inherently idempotent |
 | ADD COLUMN (single) | No - check if column exists first |
@@ -196,9 +196,9 @@ constructor(ctx: DurableObjectState, env: Env) {
 }
 ```
 
-### PRAGMA user_version (Multiple Migrations)
+### KV-Based Version Tracking (Multiple Migrations)
 
-Use `PRAGMA user_version` for incremental schema versioning when you have multiple migrations:
+Use sync KV (`storage.kv.get/put`) for incremental schema versioning when you have multiple migrations:
 
 ```typescript
 constructor(ctx: DurableObjectState, env: Env) {
@@ -206,32 +206,36 @@ constructor(ctx: DurableObjectState, env: Env) {
   ctx.blockConcurrencyWhile(async () => this.migrate());
 }
 
-private async migrate() {
-  const version = this.ctx.storage.sql
-    .exec<{ user_version: number }>("PRAGMA user_version")
-    .one().user_version;
+private migrate() {
+  const version = this.ctx.storage.kv.get("__schema_version") ?? 0;
 
   if (version < 1) {
     this.ctx.storage.sql.exec(`
       CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, data TEXT);
       CREATE INDEX IF NOT EXISTS idx_items_data ON items(data);
-      PRAGMA user_version = 1;
     `);
   }
   if (version < 2) {
-    this.ctx.storage.sql.exec(`
-      ALTER TABLE items ADD COLUMN created_at INTEGER;
-      PRAGMA user_version = 2;
-    `);
+    this.ctx.storage.sql.exec(`ALTER TABLE items ADD COLUMN created_at INTEGER`);
+  }
+
+  // Set version once at the end — no need to set intermediate versions (e.g., 1)
+  // because all migrations run synchronously in sequence with no yield point.
+  // Write coalescing ensures the SQL + KV writes batch atomically.
+  if (version < 2) {
+    this.ctx.storage.kv.put("__schema_version", 2);
   }
 }
 ```
 
+> **Warning:** Do NOT use `PRAGMA user_version` — it returns `not authorized: SQLITE_AUTH` in `wrangler dev` local mode. [`durable-utils`](https://github.com/lambrospetrou/durable-utils) (by a Cloudflare DO team member) also uses KV for migration state, not PRAGMA.
+
 **Key points:**
 - Run migrations in `blockConcurrencyWhile()` during construction
 - Each migration block checks `version < N` to run only when needed
-- Set `PRAGMA user_version = N` at the end of each migration block
-- Migrations are additive - never modify previous migration blocks
+- Set `__schema_version` via `storage.kv.put()` once after the last migration block
+- Migrations are additive — never modify previous migration blocks
+- For complex needs (transaction-wrapped migrations, row count tracking), see [`durable-utils`](https://github.com/lambrospetrou/durable-utils) (by a Cloudflare DO team member)
 
 ### Why Constructor Migrations Work
 
@@ -255,15 +259,13 @@ export class ChatRoom extends DurableObject<Env> {
   private ensureMigrated() {
     if (this.migrated) return;
 
-    const version = this.ctx.storage.sql
-      .exec<{ user_version: number }>("PRAGMA user_version")
-      .one().user_version;
+    const version = this.ctx.storage.kv.get("__schema_version") ?? 0;
 
     if (version < 1) {
       this.ctx.storage.sql.exec(`
         CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY, content TEXT);
-        PRAGMA user_version = 1;
       `);
+      this.ctx.storage.kv.put("__schema_version", 1);
     }
 
     this.migrated = true;
@@ -663,6 +665,63 @@ async alarm() {
 - Store "processed" flag or timestamp before taking action
 - Use unique transaction IDs for external calls
 - Check current state before modifying
+
+## Alarm Self-Destruct
+
+Pattern for DOs that clean themselves up after a TTL:
+
+```typescript
+async alarm(): Promise<void> {
+  // MUST call both - deleteAll() does NOT remove alarms
+  await this.ctx.storage.deleteAlarm();
+  await this.ctx.storage.deleteAll();
+}
+```
+
+**Key:** Always call `deleteAlarm()` before `deleteAll()`. See [Gotchas: Alarm Not Deleted with deleteAll()](./gotchas.md#alarm-not-deleted-with-deleteall).
+
+## Alarm Error Handling
+
+**Problem:** `alarm()` auto-retries on failure, but retries are limited (typically 3-6). If all retries exhaust, the alarm disappears permanently with no notification.
+
+```typescript
+async alarm(): Promise<void> {
+  try {
+    // Application logic here
+    await this.processScheduledWork();
+    // Reschedule if recurring
+    await this.ctx.storage.setAlarm(Date.now() + 60_000);
+  } catch (error) {
+    console.error("Alarm handler failed:", error);
+    // Reschedule with backoff instead of letting retry exhaust
+    await this.ctx.storage.setAlarm(Date.now() + 30_000);
+  }
+}
+```
+
+**Safety net for critical alarms:** Use a Worker-level cron trigger to detect and recover DOs whose alarms have been lost:
+
+```typescript
+// Worker scheduled handler (cron trigger)
+export default {
+  async scheduled(event: ScheduledEvent, env: Env) {
+    // Check critical DOs and re-arm alarms if missing
+    const criticalIds = ["billing", "cleanup", "sync"];
+    await Promise.all(criticalIds.map(async (name) => {
+      const stub = env.MY_DO.getByName(name);
+      await stub.ensureAlarmActive();
+    }));
+  }
+};
+
+// Inside the DO
+async ensureAlarmActive(): Promise<void> {
+  const alarm = await this.ctx.storage.getAlarm();
+  if (!alarm) {
+    await this.ctx.storage.setAlarm(Date.now() + 60_000);
+  }
+}
+```
 
 ## Graceful Cleanup
 

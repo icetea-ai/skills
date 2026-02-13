@@ -151,8 +151,8 @@ private getHeavyData() {
 // OK: CREATE TABLE IF NOT EXISTS is idempotent
 this.ctx.storage.sql.exec("CREATE TABLE IF NOT EXISTS items (...)");
 
-// OK: PRAGMA user_version check skips completed migrations
-const v = this.ctx.storage.sql.exec("PRAGMA user_version").one().user_version;
+// OK: KV version check skips completed migrations
+const v = this.ctx.storage.kv.get("__schema_version") ?? 0;
 if (v < 2) { /* only runs if needed */ }
 
 // WRONG: ALTER TABLE ADD COLUMN fails if column exists
@@ -435,6 +435,63 @@ async processItems(items: Item[]) {
 
 **Cause:** `deleteAll()` doesn't delete alarms automatically
 **Solution:** Call `deleteAlarm()` explicitly before `deleteAll()` to remove alarm
+
+### "Infinite Alarm Loop from Constructor"
+
+**Problem:** DO enters infinite loop: alarm fires → constructor runs → `setAlarm()` → alarm fires → repeat
+**Cause:** Calling `setAlarm()` in constructor without checking if an alarm already exists
+
+```typescript
+// WRONG - infinite loop when alarm fires
+constructor(ctx: DurableObjectState, env: Env) {
+  super(ctx, env);
+  ctx.blockConcurrencyWhile(async () => {
+    await this.ctx.storage.setAlarm(Date.now() + 60_000); // Resets alarm every wake!
+  });
+}
+
+// RIGHT - check first
+constructor(ctx: DurableObjectState, env: Env) {
+  super(ctx, env);
+  ctx.blockConcurrencyWhile(async () => {
+    const existing = await this.ctx.storage.getAlarm();
+    if (!existing) {
+      await this.ctx.storage.setAlarm(Date.now() + 60_000);
+    }
+  });
+}
+```
+
+**Why:** When an alarm fires, the DO wakes and the constructor runs. If the constructor unconditionally calls `setAlarm()`, it replaces the firing alarm with a new one, which fires, which triggers the constructor again — infinite loop.
+
+### "Alarm Disappeared After Errors"
+
+**Problem:** Alarm stops firing permanently after repeated failures
+**Cause:** `alarm()` threw an unhandled error, auto-retries exhausted (typically 3-6), alarm removed permanently
+
+```typescript
+// WRONG - unhandled throw exhausts retries, alarm disappears
+async alarm(): Promise<void> {
+  const data = await this.fetchExternalAPI(); // Throws on network error
+  await this.processData(data);
+  await this.ctx.storage.setAlarm(Date.now() + 60_000);
+}
+
+// RIGHT - catch and reschedule with backoff
+async alarm(): Promise<void> {
+  try {
+    const data = await this.fetchExternalAPI();
+    await this.processData(data);
+    await this.ctx.storage.setAlarm(Date.now() + 60_000);
+  } catch (error) {
+    console.error("Alarm handler failed:", error);
+    // Reschedule with backoff instead of relying on auto-retry
+    await this.ctx.storage.setAlarm(Date.now() + 30_000);
+  }
+}
+```
+
+**Recovery:** Use a Worker-level cron trigger as safety net. See [Patterns: Alarm Error Handling](./patterns.md#alarm-error-handling).
 
 ### "Migration Rollback Not Supported"
 

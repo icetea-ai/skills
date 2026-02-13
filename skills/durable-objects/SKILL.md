@@ -184,11 +184,13 @@ if (!cols.some(c => c.name === 'status')) {
   this.ctx.storage.sql.exec("ALTER TABLE items ADD COLUMN status TEXT");
 }
 
-// Complex: Multiple migrations (use PRAGMA user_version)
-const v = this.ctx.storage.sql.exec("PRAGMA user_version").one().user_version;
-if (v < 1) { /* migration 1 */ this.ctx.storage.sql.exec("PRAGMA user_version = 1"); }
-if (v < 2) { /* migration 2 */ this.ctx.storage.sql.exec("PRAGMA user_version = 2"); }
+// Complex: Multiple migrations (use KV-based version tracking)
+const version = this.ctx.storage.kv.get("__schema_version") ?? 0;
+if (version < 1) { /* migration 1 */ }
+if (version < 2) { /* migration 2 */ this.ctx.storage.kv.put("__schema_version", 2); }
 ```
+
+> **Warning:** `PRAGMA user_version` returns `not authorized` in `wrangler dev` local mode. Use KV-based tracking instead.
 
 See [Patterns: Schema Migrations](./references/patterns.md#schema-migrations) for decision tree and details.
 
