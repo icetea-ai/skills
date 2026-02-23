@@ -45,15 +45,6 @@ Clone this repo and copy the skill folders into the appropriate directory for yo
 | OpenAI Codex | `~/.codex/skills/` | [docs](https://developers.openai.com/codex/skills/) |
 | Pi | `~/.pi/agent/skills/` | [docs](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent#skills) |
 
-## Commands
-
-Commands are user-invocable slash commands that you explicitly call.
-
-| Command | Description |
-|---------|-------------|
-| `/cloudflare:build-agent` | Build an AI agent on Cloudflare using the Agents SDK |
-| `/cloudflare:build-mcp` | Build an MCP server on Cloudflare |
-
 ## Skills
 
 Skills are contextual and auto-loaded based on your conversation. When a request matches a skill's triggers, the agent loads and applies the relevant skill to provide accurate, up-to-date guidance.
@@ -67,7 +58,6 @@ Skills are contextual and auto-loaded based on your conversation. When a request
 | wrangler | Deploying and managing Workers, KV, R2, D1, Vectorize, Queues, Workflows |
 | web-perf | Auditing Core Web Vitals (FCP, LCP, TBT, CLS), render-blocking resources, network chains |
 | workers-best-practices | Workers code review, anti-patterns, production best practices, type checking, config validation |
-| using-icetea-skills | Maps project patterns to skills, guides which skill to invoke before implementation |
 
 ### Auto-Discovery Limitations
 
@@ -84,6 +74,8 @@ Skills don't always auto-discover due to security constraints - we avoid Session
 | cloudflare-bindings | Build Workers applications with storage, AI, and compute primitives |
 | cloudflare-builds | Manage and get insights into Workers builds |
 | cloudflare-observability | Debug and analyze application logs and analytics |
+| cloudflare-api | Cloudflare API operations (account, zones, DNS, etc.) |
+| chrome-devtools | Browser automation and debugging via Chrome DevTools |
 
 ## Resources
 
