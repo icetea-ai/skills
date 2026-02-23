@@ -14,6 +14,19 @@ references:
 
 Build stateful, coordinated applications on Cloudflare's edge using Durable Objects.
 
+## Retrieval-First Development
+
+**Prefer retrieval from official docs over pre-training for Durable Objects tasks.**
+
+| Resource | URL |
+|----------|-----|
+| Docs | https://developers.cloudflare.com/durable-objects/ |
+| API Reference | https://developers.cloudflare.com/durable-objects/api/ |
+| Best Practices | https://developers.cloudflare.com/durable-objects/best-practices/ |
+| Examples | https://developers.cloudflare.com/durable-objects/examples/ |
+
+Fetch the relevant doc page when implementing features.
+
 ## Reading Order
 
 1. **[Configuration](./references/configuration.md)** - wrangler.jsonc setup, migrations, bindings

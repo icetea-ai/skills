@@ -4,5 +4,6 @@
   "version": "1.0.3",
   "author": {
     "name": "Icetea AI & Robotics"
-  }
+  },
+  "keywords": ["cloudflare", "workers", "durable-objects", "agents", "mcp", "wrangler", "serverless", "compute", "storage", "applications"]
 }
