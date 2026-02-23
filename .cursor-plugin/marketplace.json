@@ -1,0 +1,14 @@
+{
+  "name": "icetea-ai",
+  "owner": {
+    "name": "Icetea AI & Robotics",
+    "url": "https://github.com/icetea-ai"
+  },
+  "plugins": [
+    {
+      "name": "icetea-skills",
+      "source": "./",
+      "description": "Skills for building web applications"
+    }
+  ]
+}

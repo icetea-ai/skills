@@ -39,6 +39,9 @@ Skills are contextual and auto-loaded based on your conversation. When a request
 | durable-objects | DurableObject classes, ctx.storage, blockConcurrencyWhile, alarms, WebSockets, RPC, SQLite storage, stateful coordination |
 | wrangler | Deploying and managing Workers, KV, R2, D1, Vectorize, Queues, Workflows |
 | web-perf | Auditing Core Web Vitals (FCP, LCP, TBT, CLS), render-blocking resources, network chains |
+| agents-sdk | AI agents on Workers using Agents SDK: stateful agents, @callable RPC, workflows, MCP servers, streaming chat, React hooks |
+| sandbox-sdk | Secure code execution environments: Sandbox SDK, code interpreter, file ops, preview URLs |
+| workers-best-practices | Workers code review, anti-patterns, production best practices, type checking, config validation |
 | using-icetea-skills | Maps project patterns to skills, guides which skill to invoke before implementation |
 
 ### Auto-Discovery Limitations

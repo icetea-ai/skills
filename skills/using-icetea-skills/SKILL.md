@@ -16,6 +16,9 @@ CHECK these patterns BEFORE any implementation:
 | `ctx.storage`, alarms, WebSockets, RPC | `durable-objects` |
 | `wrangler.jsonc`, `wrangler.toml` | `wrangler` |
 | Workers, Pages, D1, R2, KV, Queues | `cloudflare` |
+| `import { Agent }` from "agents", `@callable`, `routeAgentRequest`, `useAgent`, `McpAgent` | `agents-sdk` |
+| `@cloudflare/sandbox`, `getSandbox`, `sandbox.exec`, `sandbox.runCode` | `sandbox-sdk` |
+| Workers code review, best practices audit, anti-pattern check | `workers-best-practices` |
 
 ### Frontend (React/Next.js)
 | Pattern | Invoke Skill |
