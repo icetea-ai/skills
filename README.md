@@ -58,6 +58,7 @@ Skills are contextual and auto-loaded based on your conversation. When a request
 | wrangler | Deploying and managing Workers, KV, R2, D1, Vectorize, Queues, Workflows |
 | web-perf | Auditing Core Web Vitals (FCP, LCP, TBT, CLS), render-blocking resources, network chains |
 | workers-best-practices | Workers code review, anti-patterns, production best practices, type checking, config validation |
+| tanstack-query-best-practices | TanStack Query (React Query) best practices: query keys, cache integrity, mutations, SSR hydration, performance, TypeScript patterns, testing |
 
 ### Auto-Discovery Limitations
 
