@@ -196,7 +196,7 @@ constructor(ctx: DurableObjectState, env: Env) {
 }
 ```
 
-### KV-Based Version Tracking (Multiple Migrations)
+### Sync KV Version Tracking (Multiple Migrations)
 
 Use sync KV (`storage.kv.get/put`) for incremental schema versioning when you have multiple migrations:
 
@@ -228,14 +228,61 @@ private migrate() {
 }
 ```
 
-> **Warning:** Do NOT use `PRAGMA user_version` — it returns `not authorized: SQLITE_AUTH` in `wrangler dev` local mode. [`durable-utils`](https://github.com/lambrospetrou/durable-utils) (by a Cloudflare DO team member) also uses KV for migration state, not PRAGMA.
+### SQL Table Version Tracking (Multiple Migrations)
+
+Use a `_sql_schema_migrations` table for visible, queryable migration state:
+
+```typescript
+constructor(ctx: DurableObjectState, env: Env) {
+  super(ctx, env);
+  ctx.blockConcurrencyWhile(async () => this.migrate());
+}
+
+private migrate() {
+  this.ctx.storage.sql.exec(`
+    CREATE TABLE IF NOT EXISTS _sql_schema_migrations (
+      id INTEGER PRIMARY KEY,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  const currentVersion = this.ctx.storage.sql.exec<{ version: number }>(
+    "SELECT COALESCE(MAX(id), 0) as version FROM _sql_schema_migrations"
+  ).one().version;
+
+  if (currentVersion < 1) {
+    this.ctx.storage.sql.exec(`
+      CREATE TABLE IF NOT EXISTS items (id INTEGER PRIMARY KEY, data TEXT);
+      CREATE INDEX IF NOT EXISTS idx_items_data ON items(data);
+    `);
+    this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (1)");
+  }
+  if (currentVersion < 2) {
+    this.ctx.storage.sql.exec(`ALTER TABLE items ADD COLUMN created_at INTEGER`);
+    this.ctx.storage.sql.exec("INSERT INTO _sql_schema_migrations (id) VALUES (2)");
+  }
+}
+```
+
+### Choosing an Approach
+
+| Aspect | Sync KV | SQL Table |
+|--------|---------|-----------|
+| Storage | Hidden `__cf_kv` SQLite table | Visible user table |
+| Queryable | No (KV API only) | Yes (SQL queryable, with timestamps) |
+| Simplicity | Simpler (single version number) | Slightly more verbose (table + inserts) |
+
+Both approaches are valid. Sync KV is simpler; SQL table gives you visibility and auditability.
+
+> **Warning:** Do NOT use `PRAGMA user_version` — it is not supported in Durable Objects SQLite storage. Use KV-based or SQL table tracking instead.
 
 **Key points:**
 - Run migrations in `blockConcurrencyWhile()` during construction
-- Each migration block checks `version < N` to run only when needed
-- Set `__schema_version` via `storage.kv.put()` once after the last migration block
+- Each migration block checks the current version to run only when needed
+- **Sync KV:** set `__schema_version` via `storage.kv.put()` once after the last migration block
+- **SQL table:** insert into `_sql_schema_migrations` after each migration block
 - Migrations are additive — never modify previous migration blocks
-- For complex needs (transaction-wrapped migrations, row count tracking), see [`durable-utils`](https://github.com/lambrospetrou/durable-utils) (by a Cloudflare DO team member)
+- For complex needs (transaction-wrapped migrations, row count tracking), see [`durable-utils`](https://github.com/lambrospetrou/durable-utils#sqlite-schema-migrations) (by a Cloudflare DO team member) and [`@cloudflare/actors`](https://github.com/cloudflare/actors/blob/main/packages/storage/src/sql-schema-migrations.ts) — a reference implementation of the same pattern
 
 ### Why Constructor Migrations Work
 

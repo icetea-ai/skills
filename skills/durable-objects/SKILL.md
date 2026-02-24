@@ -197,15 +197,17 @@ if (!cols.some(c => c.name === 'status')) {
   this.ctx.storage.sql.exec("ALTER TABLE items ADD COLUMN status TEXT");
 }
 
-// Complex: Multiple migrations (use KV-based version tracking)
+// Complex: Multiple migrations (KV or SQL table tracking)
 const version = this.ctx.storage.kv.get("__schema_version") ?? 0;
 if (version < 1) { /* migration 1 */ }
 if (version < 2) { /* migration 2 */ this.ctx.storage.kv.put("__schema_version", 2); }
 ```
 
-> **Warning:** `PRAGMA user_version` returns `not authorized` in `wrangler dev` local mode. Use KV-based tracking instead.
+> **Warning:** `PRAGMA user_version` is not supported in Durable Objects SQLite storage. Use KV-based or SQL table tracking instead.
 
-See [Patterns: Schema Migrations](./references/patterns.md#schema-migrations) for decision tree and details.
+An alternative to KV tracking is a `_sql_schema_migrations` table for visible, queryable migration state — see patterns for the full example.
+
+See [Patterns: Schema Migrations](./references/patterns.md#schema-migrations) for decision tree, both approaches, and trade-offs.
 
 ## Testing Quick Start
 
