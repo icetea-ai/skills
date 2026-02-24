@@ -52,7 +52,7 @@ Quick lookup for common React Query errors and which rule file solves them.
 ### Component re-renders on every background refetch
 **Possible causes:**
 - Not using tracked queries → [perf-tracked-queries.md](./rules/perf-tracked-queries.md)
-- Accessing too many properties → [perf-select-memoization.md](./rules/perf-select-transform.md)
+- Accessing too many properties → [perf-select-memoization.md](./rules/perf-select-memoization.md)
 
 ### Syncing query data to useState causes bugs
 **Issue:** Dual source of truth
