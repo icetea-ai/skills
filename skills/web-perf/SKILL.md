@@ -113,7 +113,7 @@ list_network_requests(resourceTypes: ["Script", "Stylesheet", "Document", "Font"
 1. **Render-blocking resources**: JS/CSS in `<head>` without `async`/`defer`/`media` attributes
 2. **Network chains**: Resources discovered late because they depend on other resources loading first (e.g., CSS imports, JS-loaded fonts)
 3. **Missing preloads**: Critical resources (fonts, hero images, key scripts) not preloaded
-4. **Caching issues**: Missing or weak `Cache-Control`, `ETag`, or `Last-Modified` headers
+4. **Caching issues**: Missing or weak `Cache-Control`, `ETag`, or `Last-Modified` headers (see `http-caching` skill for comprehensive caching strategy guidance)
 5. **Large payloads**: Uncompressed or oversized JS/CSS bundles
 6. **Unused preconnects**: If flagged, verify by checking if ANY requests went to that origin. If zero requests, it's definitively unused—recommend removal. If requests exist but loaded late, the preconnect may still be valuable.
 
