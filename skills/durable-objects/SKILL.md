@@ -65,13 +65,13 @@ Fetch the relevant doc page when implementing features.
 
 | Layer | Type | Durability | Speed | Use Case |
 |-------|------|------------|-------|----------|
-| In-memory variables | Transient | Lost on eviction | Fastest | Caches, computed values |
+| In-memory variables | Transient | Lost on eviction | Fastest | Static utilities, ephemeral caches |
 | `ctx.storage.sql` | Persistent | Survives eviction | Fast | Primary data, relationships |
 | `ctx.storage` KV | Persistent | Survives eviction | Fast | Simple key-value data |
 | `ws.serializeAttachment()` | Per-connection | Survives hibernation | Fast | WebSocket session metadata |
 | External (R2, D1, KV) | Global | Globally durable | Slower | Shared state, large objects |
 
-**Rule:** Always persist critical state to storage. Use in-memory only for caching data that can be reconstructed.
+**Rule:** Read from storage on every access — don't cache in instance variables. Storage reads cost ~1/1000th of writes ($0.001/M vs $1/M) and are internally cached, so the performance penalty is negligible. Instance variables are lost on eviction/hibernation and create subtle bugs. Safe instance variable uses: statically-initialized utilities (regex, bound shortcuts), ephemeral caches where under-counting on loss is acceptable.
 
 ## Quick Reference
 
@@ -134,7 +134,7 @@ export default {
 3. **Use SQLite storage** - Configure `new_sqlite_classes` in migrations
 4. **Initialize in constructor** - Use `blockConcurrencyWhile()` for schema setup only
 5. **Use RPC methods** - Not fetch() handler (compatibility date >= 2024-04-03)
-6. **Persist first, cache second** - Always write to storage before updating in-memory state
+6. **Storage is the source of truth** - Read from storage on every access; storage reads are cheap (~1/1000th of writes) and internally cached
 7. **One alarm per DO** - `setAlarm()` replaces any existing alarm
 8. **Validate before stub creation** — `getByName(untrustedInput)` creates DOs for ANY string; validate input before creating stubs
 
@@ -142,7 +142,7 @@ export default {
 
 - Single global DO handling all requests (bottleneck)
 - Using `blockConcurrencyWhile()` on every request (kills throughput)
-- Storing critical state only in memory (lost on eviction/crash)
+- Caching storage values in instance variables as source of truth (lost on eviction/hibernation; reads are cheap — just re-read)
 - Using `await` between related storage writes (breaks atomicity)
 - Holding `blockConcurrencyWhile()` across `fetch()` or external I/O
 - Creating DO stubs from untrusted input without validation (orphan DOs with allocated storage, billing waste)

@@ -83,7 +83,7 @@ const val = await this.ctx.storage.get("metrics", { allowConcurrency: true });
 
 **Problem:** Variables lost after hibernation
 **Cause:** DO auto-hibernates when idle; in-memory state not persisted
-**Solution:** Use `ctx.storage` for critical data, `ws.serializeAttachment()` for per-connection metadata
+**Solution:** Read from `ctx.storage` on every access — storage reads cost ~1/1000th of writes and are internally cached, so the performance penalty vs instance variables is negligible
 
 ```typescript
 // Wrong - lost on hibernation
@@ -92,12 +92,14 @@ async webSocketMessage(ws: WebSocket, msg: string) {
   this.userCount++;  // Lost!
 }
 
-// Right - persisted
+// Right - read from storage every time (reads are cheap)
 async webSocketMessage(ws: WebSocket, msg: string) {
   const count = this.ctx.storage.kv.get("userCount") || 0;
   this.ctx.storage.kv.put("userCount", count + 1);
 }
 ```
+
+**Safe instance variable uses:** statically-initialized utilities (regex, bound shortcuts), ephemeral caches where under-counting on loss is acceptable (e.g., rate-limiting counters).
 
 ### "setTimeout Didn't Fire After Restart"
 
@@ -166,6 +168,32 @@ if (!cols.some(c => c.name === 'status')) {
 ```
 
 **Why this works with deployments:** When you deploy new code, existing DO instances are shut down. The first request after deployment creates a new instance with new code. So your migration runs with the new code, ensuring schema and code stay in sync.
+
+### "Duplicate IDs from Date.now()"
+
+**Problem:** Multiple records get the same timestamp-based ID within a synchronous loop
+**Cause:** In Workers, `Date.now()` only advances after I/O operations (fetch, storage reads, etc.). Within synchronous code, all calls return the same value
+**Solution:** Use `crypto.randomUUID()` for unique IDs or ULID for ordered IDs
+
+```typescript
+// WRONG - all three get the same timestamp
+async createBatch(items: string[]) {
+  for (const item of items) {
+    const id = `item-${Date.now()}`; // Same value for every iteration!
+    this.ctx.storage.sql.exec("INSERT INTO items (id, data) VALUES (?, ?)", id, item);
+  }
+}
+
+// RIGHT - crypto.randomUUID() is always unique
+async createBatch(items: string[]) {
+  for (const item of items) {
+    const id = crypto.randomUUID();
+    this.ctx.storage.sql.exec("INSERT INTO items (id, data) VALUES (?, ?)", id, item);
+  }
+}
+```
+
+**Note:** This is a Workers-wide behavior, not specific to DOs. The clock advances after I/O operations but not during CPU execution. Use `crypto.randomUUID()` for uniqueness regardless of I/O structure.
 
 ### "Silent Data Corruption with Large IDs"
 
@@ -375,10 +403,14 @@ For cases where you must use `idFromName()` with potentially untrusted input, co
 **Cause:** `webSocketClose` handler didn't reciprocate the close
 **Solution:** Call `ws.close()` in the handler to complete the closing handshake
 
+**Edge case:** Code 1005 means "no status code present" and is invalid to echo back — map it to 1000 (normal closure):
+
 ```typescript
 async webSocketClose(ws: WebSocket, code: number, reason: string, wasClean: boolean) {
   // CRITICAL: Reciprocate the close to avoid 1006 error
-  ws.close(code, reason);
+  // Map reserved codes to 1000 — 1005/1006/1015 MUST NOT be sent by endpoints (RFC 6455)
+  const safeCode = [1005, 1006, 1015].includes(code) ? 1000 : code;
+  ws.close(safeCode, reason);
 
   // Then do cleanup
   const { userId } = ws.deserializeAttachment();

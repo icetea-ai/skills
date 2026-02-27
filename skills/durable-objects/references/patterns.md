@@ -388,6 +388,99 @@ this.ctx.storage.sql.exec(`
 - For `WHERE a = ? AND b > ? ORDER BY b`, index on `(a, b)`
 - Covering indexes can include additional columns to avoid table lookups
 
+## SQLite Write Cost Optimization
+
+DO SQLite charges **$1.00/M rows written** vs **$0.001/M reads** — a 1,000x difference. Every write costs: 1 (table row) + 1 per updated index.
+
+### Quick Reference: Rows Written Per Operation
+
+| Operation | rowsWritten | Why |
+|-----------|-------------|-----|
+| INSERT (no indexes) | 1 | Table row only |
+| INSERT (1 index) | 2 | Table row + index entry |
+| INSERT (3 indexes) | 4 | Table row + 3 index entries |
+| UPDATE (no indexed cols changed) | 1 | Table row only |
+| UPDATE (1 indexed col changed) | 2 | Table row + index update |
+| DELETE (2 indexes) | 3 | Table row + 2 index removals |
+| `INSERT OR REPLACE` (no conflict) | Same as INSERT | No existing row to delete |
+| `INSERT OR REPLACE` (conflict) | DELETE + INSERT | Deletes old row + indexes, inserts new |
+
+### WITHOUT ROWID for Text/Compound Primary Keys
+
+Text primary keys without `WITHOUT ROWID` create a hidden rowid AND a separate index — doubling INSERT cost:
+
+```sql
+-- BAD: Hidden rowid + PK index = 2 writes per INSERT
+CREATE TABLE sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT,
+  expires_at INTEGER
+);
+
+-- GOOD: PK IS the storage key = 1 write per INSERT
+CREATE TABLE sessions (
+  token TEXT PRIMARY KEY,
+  user_id TEXT,
+  expires_at INTEGER
+) WITHOUT ROWID;
+```
+
+**When to use:** Text PKs, compound PKs, or UUID PKs. `WITHOUT ROWID` eliminates the implicit PK index overhead — secondary indexes still cost 1 write each. **Don't use** with `INTEGER PRIMARY KEY` (already aliases rowid naturally).
+
+### Compound Indexes Over Multiple Single-Column Indexes
+
+One compound index covers leftmost-prefix lookups and costs 1 write. Multiple single-column indexes cost N writes:
+
+```sql
+-- BAD: 3 writes per INSERT (table + 2 indexes)
+CREATE INDEX idx_user ON orders(user_id);
+CREATE INDEX idx_status ON orders(status);
+
+-- GOOD: 2 writes per INSERT (table + 1 index), covers WHERE user_id = ? queries too
+CREATE INDEX idx_user_status ON orders(user_id, status);
+```
+
+### Partial Indexes for Sparse Data
+
+Skip index writes for rows that don't match the condition:
+
+```sql
+-- Only indexes admin users — no write cost for regular users
+CREATE INDEX idx_admins ON users(id) WHERE is_admin = 1;
+
+-- Only indexes unprocessed items
+CREATE INDEX idx_pending ON tasks(created_at) WHERE status = 'pending';
+```
+
+### Hidden Index from UNIQUE Constraint
+
+A `UNIQUE` column constraint creates a hidden index — every INSERT pays an extra write:
+
+```sql
+-- BAD: UNIQUE creates hidden index = 2 writes per INSERT
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  email TEXT UNIQUE
+);
+
+-- BETTER: If you need uniqueness, make it the PK or part of a compound index you already need
+CREATE TABLE users (
+  email TEXT PRIMARY KEY
+) WITHOUT ROWID;
+```
+
+### Exclude Frequently-Updated Columns from Indexes
+
+Updates only rewrite affected indexes. Keep volatile columns out:
+
+```sql
+-- BAD: Every status update rewrites this index
+CREATE INDEX idx_user_status ON tasks(user_id, status, updated_at);
+
+-- GOOD: updated_at changes often but rarely queried — keep it out
+CREATE INDEX idx_user_status ON tasks(user_id, status);
+```
+
 ## In-Memory Caching
 
 ```typescript
@@ -827,6 +920,66 @@ async cleanup() {
   await this.ctx.storage.deleteAlarm(); // Separate from deleteAll
   await this.ctx.storage.deleteAll();
 }
+```
+
+## Wall-Clock Billing Awareness
+
+DOs bill for elapsed wall-clock time, not just CPU. Time spent waiting on I/O (`await`), open RPC stubs, and timers all count.
+
+### Use `using` for RPC Stubs
+
+The `using` keyword auto-disposes stubs when they leave scope, preventing lingering billing:
+
+```typescript
+// GOOD: Stub auto-disposed at end of block
+async function handleRequest(env: Env) {
+  using stub = env.MY_DO.get(id);
+  const result = await stub.someMethod();
+  return Response.json(result);
+  // stub disposed here — no lingering wall-clock charge
+}
+
+// BAD: Stub stays open for entire Worker lifetime
+const stub = env.MY_DO.get(id); // never disposed
+```
+
+### Two-One-Way-Call Pattern
+
+Avoid making external fetches from inside a DO — the DO bills for the full round-trip wait time. Instead, have the Worker fetch externally, then pass the result to the DO:
+
+```typescript
+// BAD: DO pays wall-clock for external API latency
+export class MyDO extends DurableObject<Env> {
+  async processWithExternalData(itemId: string) {
+    const data = await fetch("https://slow-api.example.com/data"); // DO billed for this wait
+    this.ctx.storage.sql.exec("UPDATE items SET data = ? WHERE id = ?", await data.text(), itemId);
+  }
+}
+
+// GOOD: Worker fetches, DO just stores
+// Worker:
+const data = await fetch("https://slow-api.example.com/data");
+await stub.storeData(itemId, await data.text());
+
+// DO:
+async storeData(itemId: string, data: string) {
+  this.ctx.storage.sql.exec("UPDATE items SET data = ? WHERE id = ?", data, itemId);
+}
+```
+
+### Never Use setTimeout/setInterval
+
+Timers keep the DO alive and billing. Use `alarm()` for scheduled work:
+
+```typescript
+// BAD: DO stays alive and bills for 60 seconds
+setTimeout(() => this.cleanup(), 60_000);
+
+// BAD: DO never hibernates, bills continuously
+setInterval(() => this.heartbeat(), 5_000);
+
+// GOOD: DO hibernates, wakes only when alarm fires
+await this.ctx.storage.setAlarm(Date.now() + 60_000);
 ```
 
 ## Best Practices
