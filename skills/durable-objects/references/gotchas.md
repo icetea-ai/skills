@@ -282,6 +282,26 @@ export class MyDurableObject extends DurableObject<Env> {
 }
 ```
 
+**Factory method trap:** Wrapping `getByName()` + `init()` in a helper? The factory MUST be `async`:
+
+```typescript
+// WRONG — sync factory, init() is a floating promise
+static for(ns: DurableObjectNamespace<MyDO>, name: string): DurableObjectStub<MyDO> {
+  const stub = ns.getByName(name);
+  stub.init(name);  // floating promise — errors swallowed, init may not complete before next RPC
+  return stub;
+}
+
+// RIGHT — async factory, init() is awaited
+static async for(ns: DurableObjectNamespace<MyDO>, name: string): Promise<DurableObjectStub<MyDO>> {
+  const stub = ns.getByName(name);
+  await stub.init(name);
+  return stub;
+}
+```
+
+The explicit `Promise<DurableObjectStub<MyDO>>` return type is key — it surfaces all unawaited callers as type errors via `tsc`.
+
 ### "Unawaited RPC Call Failed Silently"
 
 **Problem:** RPC errors swallowed, return values lost

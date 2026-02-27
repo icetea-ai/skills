@@ -130,12 +130,13 @@ export default {
 ## Critical Rules
 
 1. **Model around coordination atoms** - One DO per chat room/game/user, not one global DO
-2. **Use `getByName()` for deterministic routing** - Same input = same DO instance
+2. **Use `getByName()` for deterministic routing** - Same input = same DO instance; see rule #8 for untrusted input
 3. **Use SQLite storage** - Configure `new_sqlite_classes` in migrations
 4. **Initialize in constructor** - Use `blockConcurrencyWhile()` for schema setup only
 5. **Use RPC methods** - Not fetch() handler (compatibility date >= 2024-04-03)
 6. **Persist first, cache second** - Always write to storage before updating in-memory state
 7. **One alarm per DO** - `setAlarm()` replaces any existing alarm
+8. **Validate before stub creation** — `getByName(untrustedInput)` creates DOs for ANY string; validate input before creating stubs
 
 ## Anti-Patterns (NEVER)
 
@@ -144,12 +145,22 @@ export default {
 - Storing critical state only in memory (lost on eviction/crash)
 - Using `await` between related storage writes (breaks atomicity)
 - Holding `blockConcurrencyWhile()` across `fetch()` or external I/O
+- Creating DO stubs from untrusted input without validation (orphan DOs with allocated storage, billing waste)
 
 ## Stub Creation
 
 ```typescript
 // Deterministic - preferred for most cases
 const stub = env.MY_DO.getByName("room-123");
+
+// WRONG: untrusted input creates orphan DOs
+const stub = env.MY_DO.getByName(untrustedInput);
+
+// RIGHT: validate input before creating stub
+// See gotchas.md "Leaked DOs" for safe patterns
+const entity = await db.findById(untrustedInput);
+if (!entity) return notFound();
+const stub = env.MY_DO.getByName(entity.id);
 
 // From existing ID string
 const id = env.MY_DO.idFromString(storedIdString);
