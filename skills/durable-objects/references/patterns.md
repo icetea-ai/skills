@@ -401,9 +401,11 @@ DO SQLite charges **$1.00/M rows written** vs **$0.001/M reads** — a 1,000x di
 | INSERT (3 indexes) | 4 | Table row + 3 index entries |
 | UPDATE (no indexed cols changed) | 1 | Table row only |
 | UPDATE (1 indexed col changed) | 2 | Table row + index update |
-| DELETE (2 indexes) | 3 | Table row + 2 index removals |
+| DELETE (any number of indexes) | 1 | Index cleanup not counted |
 | `INSERT OR REPLACE` (no conflict) | Same as INSERT | No existing row to delete |
-| `INSERT OR REPLACE` (conflict) | DELETE + INSERT | Deletes old row + indexes, inserts new |
+| `INSERT OR REPLACE` (existing row) | Same as INSERT | Rewrites row + all indexes, not delete + insert |
+
+> **`INSERT OR REPLACE` caveat:** Unlike `UPDATE` which only rewrites indexes covering changed columns, `REPLACE` rewrites **all** indexes on the table. For single-field changes on heavily-indexed tables, a targeted `UPDATE` is cheaper.
 
 ### WITHOUT ROWID for Text/Compound Primary Keys
 
@@ -438,6 +440,20 @@ CREATE INDEX idx_status ON orders(status);
 
 -- GOOD: 2 writes per INSERT (table + 1 index), covers WHERE user_id = ? queries too
 CREATE INDEX idx_user_status ON orders(user_id, status);
+```
+
+### Compound Primary Keys Over PK + Separate Index
+
+A compound primary key with `WITHOUT ROWID` covers leftmost-prefix lookups for free, eliminating a separate index:
+
+```sql
+-- BAD: Single PK + separate index = 2 writes per INSERT
+CREATE TABLE t(email TEXT PRIMARY KEY, instance TEXT) WITHOUT ROWID;
+CREATE INDEX idx ON t(email, instance);
+
+-- GOOD: Compound PK = 1 write, covers email-only lookups via leftmost-prefix
+CREATE TABLE t(email TEXT, instance TEXT,
+  PRIMARY KEY (email, instance)) WITHOUT ROWID;
 ```
 
 ### Partial Indexes for Sparse Data
